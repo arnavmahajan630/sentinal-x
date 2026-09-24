@@ -1,0 +1,2 @@
+const x = ;
+module.exports = {

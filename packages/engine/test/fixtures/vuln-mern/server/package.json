@@ -1,0 +1,11 @@
+{
+  "name": "server",
+  "dependencies": {
+    "express": "^4.17.1",
+    "mongoose": "^7.0.0",
+    "jsonwebtoken": "^8.5.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": { "jest": "^29.0.0" }
+}
