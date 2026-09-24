@@ -5,3 +5,4 @@ coverage
 *.log
 .DS_Store
 resources
+!packages/engine/test/fixtures/**/.env

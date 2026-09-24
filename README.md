@@ -25,15 +25,16 @@ npm run dev                       # server :4000 (tsx watch) + dashboard :5173 (
 
 ## Scripts
 
-| Command                               | What                                                       |
-| ------------------------------------- | ---------------------------------------------------------- |
-| `npm run typecheck` / `lint` / `test` | quality gates (DB test needs Mongo on `localhost:27017`)   |
-| `npm run llm:ping`                    | scratch LLM call through `getProvider(cfg)` (reads `.env`) |
+| Command                                                                       | What                                                                        |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `npm run typecheck` / `lint` / `test`                                         | quality gates (DB test needs Mongo on `localhost:27017`)                    |
+| `npm run llm:ping`                                                            | scratch LLM call through `getProvider(cfg)` (reads `.env`)                  |
+| `npm run index -- <path> [--dump routes\|ops\|models\|authz\|json] [--force]` | index a repo into Mongo (needs `docker compose up -d mongo`), print summary |
 
 ## Layout
 
 ```
-packages/engine/src   config · bus · db/ · llm/ · health   (C1+ add indexer/, graph/, ...)
+packages/engine/src   config · bus · db/ · llm/ · health · indexer/   (C2+ add graph/, facts/, ...)
 apps/server           Express API (+ SSE from C11)
 apps/dashboard        React + Vite + Tailwind SOC UI
 sandbox/              seed users for the target app (wired in C7)

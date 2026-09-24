@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./indexer": "./src/indexer/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "llm:ping": "tsx scripts/llm-ping.ts"
+    "llm:ping": "tsx scripts/llm-ping.ts",
+    "index": "tsx scripts/index-project.ts"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",
@@ -17,7 +19,10 @@
     "@langchain/ollama": "^0.2.0",
     "@langchain/openai": "^0.5.0",
     "dotenv": "^16.4.0",
+    "ignore": "^5.3.2",
     "mongoose": "^8.8.0",
+    "simple-git": "^3.36.0",
+    "ts-morph": "^28.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

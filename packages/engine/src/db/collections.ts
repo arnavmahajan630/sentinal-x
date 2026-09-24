@@ -8,9 +8,15 @@ import type { Model, SchemaDefinition } from 'mongoose';
  */
 type IndexSpec = Record<string, 1 | -1>;
 
-function define(name: string, fields: SchemaDefinition, indexes: IndexSpec[] = []): Model<any> {
+function define(
+  name: string,
+  fields: SchemaDefinition,
+  indexes: IndexSpec[] = [],
+  unique: IndexSpec[] = [],
+): Model<any> {
   const schema = new Schema(fields, { strict: false, timestamps: true, collection: name });
   for (const idx of indexes) schema.index(idx);
+  for (const idx of unique) schema.index(idx, { unique: true });
   return mongoose.models[name] ?? mongoose.model(name, schema);
 }
 
@@ -18,8 +24,13 @@ const projectScoped = { projectId: { type: String, index: false, required: true 
 const runScoped = { runId: { type: String, required: true } };
 
 export const models = {
-  projects: define('projects', { path: String, gitHead: String, status: String }),
-  files: define('files', { ...projectScoped, path: String }, [{ projectId: 1, path: 1 }]),
+  projects: define(
+    'projects',
+    { projectId: String, path: String, gitHead: String, status: String },
+    [],
+    [{ projectId: 1 }],
+  ),
+  files: define('files', { ...projectScoped, path: String }, [], [{ projectId: 1, path: 1 }]),
   graph_nodes: define(
     'graph_nodes',
     {

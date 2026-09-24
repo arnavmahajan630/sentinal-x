@@ -5,10 +5,12 @@ let connecting: Promise<typeof mongoose> | null = null;
 /** Mongoose connection singleton. Safe to call repeatedly. */
 export async function connectDb(url: string): Promise<typeof mongoose> {
   if (mongoose.connection.readyState === 1) return mongoose;
-  connecting ??= mongoose.connect(url, { serverSelectionTimeoutMS: 5000 }).catch((err) => {
-    connecting = null;
-    throw err;
-  });
+  connecting ??= mongoose
+    .connect(url, { serverSelectionTimeoutMS: 5000, ignoreUndefined: true })
+    .catch((err) => {
+      connecting = null;
+      throw err;
+    });
   return connecting;
 }
 
