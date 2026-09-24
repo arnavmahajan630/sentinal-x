@@ -1,0 +1,70 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+/*
+ * Sentinel-X design tokens (sampled from resources/images design-system sheets).
+ * Dark-first. Light theme = same token names under [data-theme='light'] (values to be tuned
+ * when the toggle is built; not exposed in the UI yet).
+ */
+:root {
+  --sx-bg: #080f18;
+  --sx-surface: #0e1724;
+  --sx-surface-alt: #132135;
+  --sx-border: #1c2b40;
+  --sx-text: #e6edfd;
+  --sx-text-secondary: #7c8cab;
+
+  --sx-primary: #3774fe;
+  --sx-secondary: #784dfd;
+  --sx-success: #21d68e;
+  --sx-warning: #fec438;
+  --sx-danger: #fa3043;
+  --sx-info: #0baefd;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --sx-bg: #f4f7fc;
+  --sx-surface: #ffffff;
+  --sx-surface-alt: #eef2f9;
+  --sx-border: #d8e0ee;
+  --sx-text: #0e1724;
+  --sx-text-secondary: #55627d;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--sx-bg);
+  --color-surface: var(--sx-surface);
+  --color-surface-alt: var(--sx-surface-alt);
+  --color-border: var(--sx-border);
+  --color-fg: var(--sx-text);
+  --color-muted: var(--sx-text-secondary);
+  --color-primary: var(--sx-primary);
+  --color-secondary: var(--sx-secondary);
+  --color-success: var(--sx-success);
+  --color-warning: var(--sx-warning);
+  --color-danger: var(--sx-danger);
+  --color-info: var(--sx-info);
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background: var(--sx-bg);
+    color: var(--sx-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  * {
+    border-color: var(--sx-border);
+  }
+}
