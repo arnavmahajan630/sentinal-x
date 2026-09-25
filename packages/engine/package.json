@@ -5,13 +5,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./indexer": "./src/indexer/index.ts"
+    "./indexer": "./src/indexer/index.ts",
+    "./graph": "./src/graph/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "llm:ping": "tsx scripts/llm-ping.ts",
-    "index": "tsx scripts/index-project.ts"
+    "index": "tsx scripts/index-project.ts",
+    "graph": "tsx scripts/graph.ts"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",
