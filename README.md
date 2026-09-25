@@ -31,11 +31,12 @@ npm run dev                       # server :4000 (tsx watch) + dashboard :5173 (
 | `npm run llm:ping`                                                                                  | scratch LLM call through `getProvider(cfg)` (reads `.env`)                  |
 | `npm run index -- <path> [--dump routes\|ops\|models\|authz\|json] [--force]`                       | index a repo into Mongo (needs `docker compose up -d mongo`), print summary |
 | `npm run graph -- <path> [--dump summary\|routes\|route <id>\|find <Type>\|path <from> <to>\|json]` | index + build the security graph, print a summary                           |
+| `npm run facts -- --list` / `npm run facts -- <path> <tool> ['<json>']`                             | list fact tools / run one on a project (indexes + builds graph first)       |
 
 ## Layout
 
 ```
-packages/engine/src   config · bus · db/ · llm/ · health · indexer/ · graph/   (C3+ add facts/, ...)
+packages/engine/src   config · bus · db/ · llm/ · health · indexer/ · graph/ · facts/   (C4+ add knowledge/, agents/, ...)
 apps/server           Express API (+ SSE from C11)
 apps/dashboard        React + Vite + Tailwind SOC UI
 sandbox/              seed users for the target app (wired in C7)

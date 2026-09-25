@@ -2,6 +2,7 @@ export * from './types';
 export * from './ids';
 export type { GraphStore } from './store';
 export { MongoGraphStore } from './mongoStore';
+export { InMemoryGraphStore } from './memoryStore';
 export { buildGraph, applyGraphModel } from './build';
 export type { BuildGraphResult } from './build';
 export { buildGraphModel, assertConsistent } from './model';
