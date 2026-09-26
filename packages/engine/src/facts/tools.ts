@@ -1,24 +1,15 @@
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { LlmTool } from '../llm/types';
+import { runTool, toLlmToolList, toolJsonSchema } from '../tools/registry';
+import type { ToolDef, ToolResult } from '../tools/registry';
 import type { FactEngine } from './engine';
-import { FactError } from './errors';
-import { suggest } from './resolve';
 
 /**
  * Agent-facing tool contracts for the Fact Engine. Framework-agnostic: C5 adapts this list to LangGraph.
  * Tool names == FactEngine method names == playbook `factQueries` entries.
  */
-export interface FactTool {
-  name: string;
-  description: string;
-  schema: z.ZodObject<z.ZodRawShape>;
-  run: (engine: FactEngine, args: any) => Promise<unknown>;
-}
-
-export type ToolResult =
-  | { ok: true; data: unknown }
-  | { ok: false; error: { code: string; message: string; suggestions?: string[] } };
+export type FactTool = ToolDef<FactEngine>;
+export type { ToolResult };
 
 const route = z
   .string()
@@ -148,72 +139,20 @@ export const FACT_TOOLS: FactTool[] = [
   },
 ];
 
-const byName = new Map(FACT_TOOLS.map((t) => [t.name, t]));
-const MAX_CHARS = 60_000;
-
 export function factToolJsonSchema(tool: FactTool): object {
-  const schema = zodToJsonSchema(tool.schema, {
-    target: 'jsonSchema7',
-    $refStrategy: 'none',
-  }) as Record<string, unknown>;
-  delete schema.$schema;
-  return schema;
+  return toolJsonSchema(tool);
 }
 
 /** the registry as C0 `LlmTool[]` (what LLM providers accept) */
 export function toLlmTools(names?: string[]): LlmTool[] {
-  return FACT_TOOLS.filter((t) => !names || names.includes(t.name)).map((t) => ({
-    name: t.name,
-    description: t.description,
-    schema: factToolJsonSchema(t),
-  }));
+  return toLlmToolList(FACT_TOOLS, names);
 }
 
 /** validate → run → shape errors so an LLM can self-correct. Never throws for user/LLM mistakes. */
-export async function runFactTool(
+export function runFactTool(
   engine: FactEngine,
   name: string,
   rawArgs: unknown,
 ): Promise<ToolResult> {
-  const tool = byName.get(name);
-  if (!tool)
-    return {
-      ok: false,
-      error: {
-        code: 'unknown_tool',
-        message: `Unknown tool "${name}"`,
-        suggestions: suggest(name, [...byName.keys()]),
-      },
-    };
-  const parsed = tool.schema.safeParse(rawArgs ?? {});
-  if (!parsed.success) {
-    const message = parsed.error.issues
-      .map((i) => `${i.path.join('.') || 'args'}: ${i.message}`)
-      .join('; ');
-    return { ok: false, error: { code: 'invalid_argument', message } };
-  }
-  try {
-    const data = await tool.run(engine, parsed.data);
-    if (JSON.stringify(data).length > MAX_CHARS) {
-      return {
-        ok: false,
-        error: {
-          code: 'too_large',
-          message: 'Result too large; narrow it with filters (route, model, pathPrefix, limit).',
-        },
-      };
-    }
-    return { ok: true, data };
-  } catch (e) {
-    if (e instanceof FactError)
-      return {
-        ok: false,
-        error: {
-          code: e.code,
-          message: e.message,
-          ...(e.suggestions.length ? { suggestions: e.suggestions } : {}),
-        },
-      };
-    throw e; // real bug: don't hide it
-  }
+  return runTool(FACT_TOOLS, engine, name, rawArgs);
 }

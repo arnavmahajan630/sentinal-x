@@ -21,6 +21,8 @@ const schema = z.object({
   SANDBOX_TARGET_URL: optStr,
   SANDBOX_SEED_USERS: z.string().default('./sandbox/seed-users.json'),
   VERIFICATION_ENABLED: bool.default('false'),
+
+  PLAYBOOKS_DIR: optStr,
 });
 
 export type LlmProviderName = 'gemini' | 'deepseek' | 'ollama';
@@ -39,6 +41,8 @@ export interface Config {
     seedUsersPath: string;
     verificationEnabled: boolean;
   };
+  /** where playbooks live (default: repo-root `playbooks/`, resolved by the knowledge loader) */
+  playbooksDir?: string;
 }
 
 /** Parse + validate env into a typed Config. Throws a readable error on invalid input. */
@@ -67,6 +71,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       seedUsersPath: e.SANDBOX_SEED_USERS,
       verificationEnabled: e.VERIFICATION_ENABLED,
     },
+    playbooksDir: e.PLAYBOOKS_DIR,
   };
 }
 

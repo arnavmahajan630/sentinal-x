@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./indexer": "./src/indexer/index.ts",
     "./graph": "./src/graph/index.ts",
-    "./facts": "./src/facts/index.ts"
+    "./facts": "./src/facts/index.ts",
+    "./knowledge": "./src/knowledge/index.ts",
+    "./tools": "./src/tools/registry.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -15,7 +17,8 @@
     "llm:ping": "tsx scripts/llm-ping.ts",
     "index": "tsx scripts/index-project.ts",
     "graph": "tsx scripts/graph.ts",
-    "facts": "tsx scripts/facts.ts"
+    "facts": "tsx scripts/facts.ts",
+    "knowledge": "tsx scripts/knowledge.ts"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",
@@ -23,6 +26,7 @@
     "@langchain/ollama": "^0.2.0",
     "@langchain/openai": "^0.5.0",
     "dotenv": "^16.4.0",
+    "gray-matter": "^4.0.3",
     "ignore": "^5.3.2",
     "mongoose": "^8.8.0",
     "simple-git": "^3.36.0",

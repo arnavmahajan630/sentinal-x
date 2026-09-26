@@ -27,9 +27,9 @@ import type {
   SecretFact,
 } from './types';
 
-const WRITE_OP =
+export const WRITE_OP =
   /^(create|insertMany|insertOne|new|save|update\w*|delete\w*|remove|replaceOne|findByIdAnd(Update|Delete|Remove)|findOneAnd(Update|Delete|Remove|Replace)|findAndModify|bulkWrite)$/;
-const MASS_ASSIGN_OP =
+export const MASS_ASSIGN_OP =
   /^(create|insertMany|insertOne|new|update\w*|replaceOne|findByIdAndUpdate|findOneAndUpdate|findOneAndReplace|findAndModify)$/;
 const MUTATING_METHOD = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const DEFAULT_LIMIT = 100;
@@ -751,3 +751,6 @@ function queryKeysFor(shape: any, canonical: string, depth = 0): string[] {
 export function createFactEngine(projectId: string): FactEngine {
   return new FactEngine(new MongoGraphStore(projectId));
 }
+
+/** true for DB operations that write (create/update/delete/save/new …) */
+export const isWriteOp = (op: string): boolean => WRITE_OP.test(op);

@@ -75,7 +75,12 @@ export const models = {
     { projectId: 1, ts: -1 },
   ]),
   change_sets: define('change_sets', { ...projectScoped }),
-  security_knowledge: define('security_knowledge', { type: String }),
+  security_knowledge: define(
+    'security_knowledge',
+    { type: { type: String, required: true } },
+    [],
+    [{ type: 1 }],
+  ),
 } as const;
 
 export const COLLECTION_NAMES = Object.keys(models) as (keyof typeof models)[];

@@ -22,7 +22,8 @@
     "llm:ping": "npm run llm:ping -w @sentinelx/engine",
     "index": "npm run index -w @sentinelx/engine --",
     "graph": "npm run graph -w @sentinelx/engine --",
-    "facts": "npm run facts -w @sentinelx/engine --"
+    "facts": "npm run facts -w @sentinelx/engine --",
+    "knowledge": "npm run knowledge -w @sentinelx/engine --"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

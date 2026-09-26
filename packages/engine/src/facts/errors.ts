@@ -1,13 +1,12 @@
-export type FactErrorCode = 'not_found' | 'ambiguous' | 'invalid_argument';
+import { ToolError } from '../tools/errors';
+import type { ToolErrorCode } from '../tools/errors';
 
-/** Typed error so the tool layer can turn it into a structured, self-correctable answer for the LLM. */
-export class FactError extends Error {
-  constructor(
-    readonly code: FactErrorCode,
-    message: string,
-    readonly suggestions: string[] = [],
-  ) {
-    super(message);
+export type FactErrorCode = ToolErrorCode;
+
+/** Fact-layer error (kept as its own class for callers; handled generically by `runTool`). */
+export class FactError extends ToolError {
+  constructor(code: FactErrorCode, message: string, suggestions: string[] = []) {
+    super(code, message, suggestions);
     this.name = 'FactError';
   }
 }
