@@ -53,18 +53,29 @@ export function normalizeAiMessage(msg: AIMessage): LlmResponse {
   };
 }
 
-export function toToolDefs(tools: LlmTool[]) {
+export function toToolDefs(tools: LlmTool[], sanitize?: (schema: object) => object) {
   return tools.map((t) => ({
     type: 'function' as const,
-    function: { name: t.name, description: t.description, parameters: t.schema },
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: sanitize ? sanitize(t.schema) : t.schema,
+    },
   }));
 }
 
 /** Wraps any LangChain chat model behind the locked LlmProvider interface. */
 export class LangChainProvider implements LlmProvider {
+  /**
+   * @param requiredToolChoice provider-specific `tool_choice` value meaning "must call a tool"
+   *   ('any' for Gemini, 'required' for OpenAI-compatible). Undefined = provider can't force tool use.
+   */
   constructor(
     public readonly name: string,
     private readonly makeModel: (opts?: LlmChatOptions) => BaseChatModel,
+    private readonly requiredToolChoice?: string,
+    /** provider quirk: rewrite JSON schemas the provider's API rejects (e.g. Gemini: no `const`, `exclusiveMinimum`) */
+    private readonly sanitizeSchema?: (schema: object) => object,
   ) {}
 
   async chat(
@@ -72,12 +83,23 @@ export class LangChainProvider implements LlmProvider {
     tools?: LlmTool[],
     opts?: LlmChatOptions,
   ): Promise<LlmResponse> {
-    let model = this.makeModel(opts);
-    if (tools?.length) {
-      if (!model.bindTools) throw new Error(`Provider ${this.name} does not support tool calling`);
-      model = model.bindTools(toToolDefs(tools)) as unknown as BaseChatModel;
+    const base = this.makeModel(opts);
+    const lc = toLangChainMessages(messages);
+    const callOpts = opts?.signal ? { signal: opts.signal } : undefined;
+    if (!tools?.length) return normalizeAiMessage((await base.invoke(lc, callOpts)) as AIMessage);
+    if (!base.bindTools) throw new Error(`Provider ${this.name} does not support tool calling`);
+    const defs = toToolDefs(tools, this.sanitizeSchema);
+
+    if (opts?.toolChoice === 'required' && this.requiredToolChoice) {
+      try {
+        const forced = (base.bindTools as any)(defs, { tool_choice: this.requiredToolChoice });
+        return normalizeAiMessage((await forced.invoke(lc, callOpts)) as AIMessage);
+      } catch (e) {
+        if (opts.signal?.aborted) throw e;
+        // provider/model rejected forced tool choice → fall back to a normal tool-enabled call
+      }
     }
-    const res = await model.invoke(toLangChainMessages(messages));
-    return normalizeAiMessage(res as AIMessage);
+    const model = base.bindTools(defs) as unknown as BaseChatModel;
+    return normalizeAiMessage((await model.invoke(lc, callOpts)) as AIMessage);
   }
 }

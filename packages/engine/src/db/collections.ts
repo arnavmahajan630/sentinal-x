@@ -62,13 +62,31 @@ export const models = {
     ],
     [{ projectId: 1, id: 1 }],
   ),
-  agent_runs: define('agent_runs', { ...projectScoped, status: String }),
-  agent_steps: define('agent_steps', { ...runScoped, ts: Date, seq: Number }, [
-    { runId: 1, ts: 1 },
-  ]),
-  tool_calls: define('tool_calls', { ...runScoped }, [{ runId: 1 }]),
-  observations: define('observations', { ...projectScoped, runId: String }),
-  hypotheses: define('hypotheses', { ...projectScoped, runId: String }),
+  agent_runs: define(
+    'agent_runs',
+    { ...projectScoped, runId: { type: String, required: true }, status: String },
+    [{ projectId: 1, startedAt: -1 }],
+    [{ runId: 1 }],
+  ),
+  agent_steps: define(
+    'agent_steps',
+    { ...runScoped, ts: Date, seq: Number },
+    [{ runId: 1, ts: 1 }],
+    [{ runId: 1, seq: 1 }],
+  ),
+  tool_calls: define(
+    'tool_calls',
+    { ...runScoped, seq: Number },
+    [{ runId: 1 }],
+    [{ runId: 1, seq: 1 }],
+  ),
+  observations: define('observations', { ...projectScoped, runId: String }, [{ runId: 1 }]),
+  hypotheses: define(
+    'hypotheses',
+    { ...projectScoped, runId: String, id: String },
+    [{ runId: 1 }, { projectId: 1, type: 1 }],
+    [{ id: 1 }],
+  ),
   verification_runs: define('verification_runs', { ...projectScoped }),
   findings: define('findings', { ...projectScoped, status: String }, [{ projectId: 1, status: 1 }]),
   security_events: define('security_events', { ...projectScoped, ts: Date }, [

@@ -15,5 +15,6 @@ export function createDeepseekProvider(cfg: Config['llm']['deepseek']) {
         maxTokens: opts?.maxTokens,
         configuration: { baseURL: cfg.baseUrl },
       }),
+    'required',
   );
 }
