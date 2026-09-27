@@ -25,7 +25,7 @@ describe('server', () => {
     expect(s).not.toContain('mongodb://');
     expect(res.body.llm).toEqual({
       provider: 'gemini',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       configured: true,
     });
   });

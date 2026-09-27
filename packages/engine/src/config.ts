@@ -11,7 +11,7 @@ const schema = z.object({
 
   LLM_PROVIDER: z.enum(['gemini', 'deepseek', 'ollama']).default('gemini'),
   GEMINI_API_KEY: optStr,
-  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+  GEMINI_MODEL: z.string().default('gemini-3.8-flash'),
   DEEPSEEK_API_KEY: optStr,
   DEEPSEEK_MODEL: z.string().default('deepseek-chat'),
   DEEPSEEK_BASE_URL: z.string().default('https://api.deepseek.com'),

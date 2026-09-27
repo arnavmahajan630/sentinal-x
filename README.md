@@ -33,11 +33,12 @@ npm run dev                       # server :4000 (tsx watch) + dashboard :5173 (
 | `npm run graph -- <path> [--dump summary\|routes\|route <id>\|find <Type>\|path <from> <to>\|json]` | index + build the security graph, print a summary                                      |
 | `npm run facts -- --list` / `npm run facts -- <path> <tool> ['<json>']`                             | list fact tools / run one on a project (indexes + builds graph first)                  |
 | `npm run knowledge -- list\|show <type>\|match a,b\|validate\|sync\|route <path> '<route>'`         | browse/validate playbooks, sync to Mongo, or route a route's fact signals to playbooks |
+| `npm run agent -- <path> [--goal "…"] [--provider ollama\|gemini] [--model …] [--max-steps N]`      | index + graph, then run the demo agent live and stream its steps (needs a working LLM) |
 
 ## Layout
 
 ```
-packages/engine/src   config · bus · db/ · llm/ · health · indexer/ · graph/ · facts/ · knowledge/ · tools/   (C5+ add agents/, ...)
+packages/engine/src   config · bus · db/ · llm/ · health · indexer/ · graph/ · facts/ · knowledge/ · tools/ · agents/   (C6+ add the specialist agents)
 apps/server           Express API (+ SSE from C11)
 apps/dashboard        React + Vite + Tailwind SOC UI
 playbooks/            security playbooks (markdown) — see resources/plan C4
