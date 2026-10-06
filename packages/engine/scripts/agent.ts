@@ -2,8 +2,8 @@ import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-// Usage: npm run agent -- <projectPath> [--goal "…"] [--provider ollama|gemini|deepseek] [--model <name>] [--max-steps N]
-// Indexes + builds the graph, then runs the demo agent live, streaming its steps.
+// Usage: npm run agent -- <projectPath> [--agent demo|auth] [--goal "…"] [--provider ollama|gemini|deepseek] [--model <name>] [--max-steps N]
+// Indexes + builds the graph, then runs the chosen agent live, streaming its steps.
 loadEnv({ path: new URL('../../../.env', import.meta.url).pathname, quiet: true });
 
 const args = process.argv.slice(2);
@@ -16,7 +16,7 @@ const target = args.find(
 );
 if (!target) {
   console.error(
-    'usage: npm run agent -- <projectPath> [--goal "…"] [--provider ollama] [--model qwen2.5:7b-instruct] [--max-steps 12]',
+    'usage: npm run agent -- <projectPath> [--agent demo|auth] [--goal "…"] [--provider ollama] [--model qwen2.5:7b-instruct] [--max-steps 12]',
   );
   process.exit(1);
 }
@@ -32,7 +32,14 @@ const { agentChannel, bus, connectDb, disconnectDb, initCollections, loadConfig 
   await import('../src');
 const { indexProject } = await import('../src/indexer');
 const { buildGraph } = await import('../src/graph');
-const { demoAgent, runAgent } = await import('../src/agents');
+const { demoAgent, authAgent, runAgent } = await import('../src/agents');
+const AGENTS = { demo: demoAgent, auth: authAgent } as const;
+const agentName = (flag('agent') ?? 'demo') as keyof typeof AGENTS;
+const agent = AGENTS[agentName];
+if (!agent) {
+  console.error(`unknown --agent "${agentName}". Known: ${Object.keys(AGENTS).join(', ')}`);
+  process.exit(1);
+}
 
 const cfg = loadConfig();
 await connectDb(cfg.mongoUrl);
@@ -49,11 +56,16 @@ console.log(
   `provider=${cfg.llm.provider} model=${cfg.llm[cfg.llm.provider].model} runId=${runId}\n`,
 );
 
+const defaultGoals: Record<keyof typeof AGENTS, string> = {
+  demo: 'List the unprotected routes and explain the security risk of each.',
+  auth: 'For each route, determine whether access control (authentication, ownership, role) is enforced correctly; where it isn\'t, propose a hypothesis with evidence and the right verification template.',
+};
+
 const result = await runAgent({
   runId,
   projectId: idx.projectId,
-  agent: demoAgent,
-  goal: flag('goal') ?? 'List the unprotected routes and explain the security risk of each.',
+  agent,
+  goal: flag('goal') ?? defaultGoals[agentName],
   budget: flag('max-steps') ? { maxSteps: Number(flag('max-steps')) } : undefined,
 });
 
