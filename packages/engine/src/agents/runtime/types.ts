@@ -35,7 +35,9 @@ export type FactToolName =
   | 'getAuthorizationGaps'
   | 'getJwtUsage'
   | 'getSecrets'
-  | 'getExposure';
+  | 'getExposure'
+  | 'getFindings'
+  | 'getAttackPath';
 export type KnowledgeToolName =
   'getPlaybook' | 'getPlaybooksForSignals' | 'listPlaybooks' | 'getSignalCatalog';
 export const EMIT_TOOL_NAMES = [
@@ -43,6 +45,7 @@ export const EMIT_TOOL_NAMES = [
   'proposeHypothesis',
   'requestVerification',
   'requestInvestigation',
+  'attachAttackPath',
   'finish',
 ] as const;
 export type EmitToolName = (typeof EMIT_TOOL_NAMES)[number];
@@ -81,7 +84,13 @@ export interface AgentStep {
 export type HypothesisSubject =
   | { kind: 'route'; route: string }
   | { kind: 'jwt'; fn: string; line?: number }
-  | { kind: 'secret'; id: string };
+  | { kind: 'secret'; id: string }
+  // Added for type-level symmetry with the other subject kinds; NOT wired into
+  // groundHypothesis in C8 (see agents/attackPath.ts) — Attack-Path composes chains over
+  // already-CONFIRMED findings via the dedicated `attachAttackPath` tool instead, since
+  // re-running an already-proven finding through the signal-gate/verification pipeline
+  // would be architecturally wrong (nothing new to exploit).
+  | { kind: 'chain'; findingIds: string[] };
 
 export interface Observation {
   id: string;

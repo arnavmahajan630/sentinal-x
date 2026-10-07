@@ -16,7 +16,7 @@ describe('agent tool set', () => {
   const tools = buildAgentTools();
   const names = tools.map((t) => t.name as string);
 
-  it('= fact tools + knowledge tools + exactly 5 emit tools; names unique', () => {
+  it('= fact tools + knowledge tools + exactly 6 emit tools; names unique', () => {
     expect(new Set(names).size).toBe(names.length);
     expect(names.filter((n) => FACT_TOOLS.some((t) => t.name === n))).toHaveLength(
       FACT_TOOLS.length,
@@ -31,9 +31,18 @@ describe('agent tool set', () => {
   });
 
   it('agents can propose but never create or confirm findings', () => {
-    expect(names.some((n) => /finding|confirm|verified|resolve/i.test(n))).toBe(false);
+    // getFindings (C8) is a sanctioned read of already-confirmed findings, and
+    // attachAttackPath (C8) only attaches a chain narrative to a finding another agent's
+    // run already proved CONFIRMED — neither creates or confirms one, so both are excluded
+    // from this "no creation/confirmation tool" check rather than making the regex loose.
+    const sanctioned = new Set(['getFindings', 'attachAttackPath']);
+    expect(
+      names.filter((n) => !sanctioned.has(n)).some((n) => /finding|confirm|verified|resolve/i.test(n)),
+    ).toBe(false);
     expect(names).toContain('proposeHypothesis');
     expect(names).toContain('requestVerification');
+    expect(names).toContain('getFindings');
+    expect(names).toContain('attachAttackPath');
   });
 
   it('literal name types are in sync with the registries (type-level guard)', () => {
@@ -57,6 +66,8 @@ describe('agent tool set', () => {
       'getJwtUsage',
       'getSecrets',
       'getExposure',
+      'getFindings',
+      'getAttackPath',
     ];
     expect([...factNames].sort()).toEqual([...declared].sort());
     const kdeclared: KnowledgeToolName[] = [

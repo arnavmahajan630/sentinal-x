@@ -137,6 +137,29 @@ export const FACT_TOOLS: FactTool[] = [
     schema: z.object({ route: route.optional(), asset: z.string().optional() }),
     run: (e, a) => e.getExposure(a),
   },
+  {
+    name: 'getFindings',
+    description:
+      "List this project's findings (from the Verification Engine) — confirmed, rejected or inconclusive vulnerabilities with their affected nodes. Use to find pieces to compose into an attack path.",
+    schema: z.object({
+      status: z.enum(['open', 'resolved', 'regressed', 'rejected']).optional(),
+      type: z.string().optional(),
+      verificationResult: z.enum(['CONFIRMED', 'REJECTED', 'INCONCLUSIVE']).optional(),
+    }),
+    run: (e, a) => e.getFindings(a),
+  },
+  {
+    name: 'getAttackPath',
+    description:
+      "Shortest labeled path between two graph nodes (e.g. a Route and an Asset, or two findings' affected nodes), following graph edges. null if unreachable within maxDepth.",
+    schema: z.object({
+      from: z.string().describe("Node id, e.g. 'Route:GET /api/orders/:id'"),
+      to: z.string().describe("Node id, e.g. 'Asset:Order.paymentDetails'"),
+      edgeTypes: z.array(z.string()).optional(),
+      maxDepth: z.number().int().min(1).max(12).optional(),
+    }),
+    run: (e, a) => e.getAttackPath(a),
+  },
 ];
 
 export function factToolJsonSchema(tool: FactTool): object {

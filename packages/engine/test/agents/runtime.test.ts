@@ -139,7 +139,16 @@ describe('runAgent: happy path (trivial demo-style agent)', () => {
     expect(first.messages[0]!.content).toContain('Playbook: idor@');
     expect(first.messages[0]!.content).toContain('False-positive rules');
     expect(first.tools!.map((t) => t.name)).toContain('proposeHypothesis');
-    expect(first.tools!.map((t) => t.name).some((n) => /finding|confirm/i.test(n))).toBe(false);
+    // getFindings (read of already-confirmed findings) and attachAttackPath (attaches a
+    // chain to an already-CONFIRMED finding) are sanctioned C8 exceptions — see
+    // test/agents/tools.test.ts for the full "no creation/confirmation tool" check.
+    const sanctioned = new Set(['getFindings', 'attachAttackPath']);
+    expect(
+      first.tools!
+        .map((t) => t.name)
+        .filter((n) => !sanctioned.has(n))
+        .some((n) => /finding|confirm/i.test(n)),
+    ).toBe(false);
     const second = provider.calls[1]!;
     const toolMsg = second.messages.find((m) => m.role === 'tool')!;
     expect(JSON.parse(toolMsg.content)).toMatchObject({

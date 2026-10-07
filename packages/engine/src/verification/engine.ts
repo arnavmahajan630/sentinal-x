@@ -6,6 +6,9 @@ import { SandboxClient } from './client';
 import { verifyIdor } from './templates/idor';
 import { verifyMissingAuth } from './templates/missing-auth';
 import { verifyBfla } from './templates/bfla';
+import { verifyNosqlInjection } from './templates/nosql-injection';
+import { verifyMassAssignment } from './templates/mass-assignment';
+import { verifyDataExposure } from './templates/data-exposure';
 import { inconclusive } from './templates/types';
 import type { Template, TemplateResult } from './templates/types';
 
@@ -25,6 +28,9 @@ const TEMPLATES: Record<string, Template> = {
   idor: verifyIdor,
   'missing-auth': verifyMissingAuth,
   bfla: verifyBfla,
+  'nosql-injection': verifyNosqlInjection,
+  'mass-assignment': verifyMassAssignment,
+  'data-exposure': verifyDataExposure,
 };
 
 /**

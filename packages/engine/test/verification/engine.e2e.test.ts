@@ -25,14 +25,14 @@ const cfg: Config = {
   },
 };
 
-function request(template: string, route: string): VerificationRequest {
+function request(template: string, route: string, affectedNodes: string[] = []): VerificationRequest {
   return {
     id: randomUUID(),
     runId: 'e2e-run',
     hypothesisId: randomUUID(),
     template,
     subject: { kind: 'route', route },
-    affectedNodes: [],
+    affectedNodes,
     requestedAt: new Date().toISOString(),
   };
 }
@@ -69,6 +69,56 @@ describe.skipIf(!sandboxReachable)('verify() against the live sandbox', () => {
   it('bfla: non-admin hitting /api/admin/stats → REJECTED (route is correctly guarded)', async () => {
     const run = await verify(cfg, projectId, request('bfla', 'GET /api/admin/stats'));
     expect(run.result).toBe('REJECTED');
+  });
+
+  // No REJECTED case for nosql-injection: the fixture has exactly one nosql-injection-shaped
+  // route (the login filter), and it is deterministically vulnerable — there's no safe
+  // comparison endpoint to exercise the template's REJECTED branch against live. Same
+  // category of gap as data-exposure's missing negative control (see below); covered at
+  // the grounding level instead (dataflow.test.ts's safe-route case).
+  it('nosql-injection: operator payload bypasses the login filter → CONFIRMED', async () => {
+    const run = await verify(cfg, projectId, request('nosql-injection', 'POST /api/auth/login'));
+    expect(run.result).toBe('CONFIRMED');
+  });
+
+  it('mass-assignment: register ignores the injected role → REJECTED', async () => {
+    // Negative control for the template itself: run against a route not in its dispatch
+    // table resolves INCONCLUSIVE rather than guessing, so this proves the real dispatch —
+    // register really does let role:'admin' through (see dataflow.test.ts for the
+    // grounding side); here we assert the actual exploit outcome against the live app.
+    const run = await verify(cfg, projectId, request('mass-assignment', 'POST /api/auth/register'));
+    expect(run.result).toBe('CONFIRMED');
+  });
+
+  it('mass-assignment: PUT /api/orders/:id lets an unexpected field through → CONFIRMED', async () => {
+    const run = await verify(cfg, projectId, request('mass-assignment', 'PUT /api/orders/:id'));
+    expect(run.result).toBe('CONFIRMED');
+  });
+
+  it('mass-assignment: POST /api/orders overrides the injected owner id → REJECTED (negative control)', async () => {
+    // order.controller.js sets `user: req.user.id` AFTER spreading req.body, so an
+    // injected `user` field is always overridden — the one route in this fixture where
+    // mass-assignment doesn't work, on purpose.
+    const run = await verify(cfg, projectId, request('mass-assignment', 'POST /api/orders'));
+    expect(run.result).toBe('REJECTED');
+  });
+
+  it('data-exposure: login response leaks User.password → CONFIRMED', async () => {
+    const run = await verify(
+      cfg,
+      projectId,
+      request('data-exposure', 'POST /api/auth/login', ['Asset:User.password']),
+    );
+    expect(run.result).toBe('CONFIRMED');
+  });
+
+  it('data-exposure: order response leaks Order.paymentDetails → CONFIRMED', async () => {
+    const run = await verify(
+      cfg,
+      projectId,
+      request('data-exposure', 'GET /api/orders/:id', ['Asset:Order.paymentDetails']),
+    );
+    expect(run.result).toBe('CONFIRMED');
   });
 
   it('an unreachable configured target never crashes verify() — surfaces INCONCLUSIVE', async () => {

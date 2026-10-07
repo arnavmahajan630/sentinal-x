@@ -66,7 +66,13 @@ export function subjectKindOf(p: Playbook): 'route' | 'jwt' | 'secret' | undefin
 }
 
 const subjectLabel = (s: HypothesisSubject) =>
-  s.kind === 'route' ? s.route : s.kind === 'jwt' ? `${s.fn}${s.line ? `:${s.line}` : ''}` : s.id;
+  s.kind === 'route'
+    ? s.route
+    : s.kind === 'jwt'
+      ? `${s.fn}${s.line ? `:${s.line}` : ''}`
+      : s.kind === 'secret'
+        ? s.id
+        : s.findingIds.join(',');
 const outputText = (c: ToolCallRecord) => JSON.stringify(c.output ?? '');
 
 /**
@@ -161,8 +167,8 @@ export async function groundHypothesis(
       ];
       covers = async (c) =>
         c.tool === 'getJwtUsage' && outputText(c).includes(JSON.stringify(usage.fn));
-    } else {
-      const secretRef = (input.subject as { kind: 'secret'; id: string }).id;
+    } else if (input.subject.kind === 'secret') {
+      const secretRef = input.subject.id;
       const secrets = await engine.getSecrets();
       const s = secrets.find((x) => x.id === secretRef || x.id === `Secret:${secretRef}`);
       if (!s)
@@ -181,6 +187,13 @@ export async function groundHypothesis(
         ...s.usedBy.filter((u) => u.node.includes('#')).map((u) => `Function:${u.node}`),
       ];
       covers = async (c) => c.tool === 'getSecrets' && outputText(c).includes(JSON.stringify(s.id));
+    } else {
+      // 'chain' subjects are not grounded here (C8): Attack-Path composes already-CONFIRMED
+      // findings via the dedicated `attachAttackPath` tool instead, never proposeHypothesis.
+      return reject(
+        'invalid_argument',
+        'chain subjects are not proposed as hypotheses; use attachAttackPath on an already-CONFIRMED finding instead',
+      );
     }
   } catch (e: any) {
     return reject(e.code ?? 'invalid_argument', e.message, e.suggestions);

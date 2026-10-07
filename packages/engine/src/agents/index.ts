@@ -22,3 +22,5 @@ export { pruneMessages, truncateForLlm, estimateTokens } from './runtime/context
 export { ScriptedProvider, call, calls, say, finishCall } from './runtime/testing';
 export { demoAgent } from './demo';
 export { authAgent } from './auth';
+export { dataflowAgent } from './dataflow';
+export { attackPathAgent } from './attackPath';

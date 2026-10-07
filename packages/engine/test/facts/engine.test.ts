@@ -319,6 +319,29 @@ describe('ids, errors, determinism, memoization', () => {
     expect(b).toBe(a);
   });
 
+  it('getAttackPath wraps GraphStore.pathDetail: real path, null when unreachable, respects maxDepth', async () => {
+    const found = await e.getAttackPath({
+      from: 'Route:GET /api/orders/:id',
+      to: 'Asset:Order.paymentDetails',
+    });
+    expect(found).not.toBeNull();
+    expect(found!.nodes.map((n) => n.id)).toContain('Route:GET /api/orders/:id');
+    expect(found!.nodes.map((n) => n.id)).toContain('Asset:Order.paymentDetails');
+
+    const unreachable = await e.getAttackPath({
+      from: 'Route:GET /api/health',
+      to: 'Asset:Order.paymentDetails',
+    });
+    expect(unreachable).toBeNull();
+
+    const tooShort = await e.getAttackPath({
+      from: 'Route:GET /api/orders/:id',
+      to: 'Asset:Order.paymentDetails',
+      maxDepth: 1,
+    });
+    expect(tooShort).toBeNull();
+  });
+
   it('snapshots the graph once (memoized) and can be refreshed', async () => {
     const { engine, store } = await fixtureEngine();
     let calls = 0;

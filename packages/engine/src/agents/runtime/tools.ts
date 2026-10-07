@@ -10,6 +10,7 @@ import type { ToolDef } from '../../tools/registry';
 import type { RunEmitter } from './events';
 import { groundHypothesis } from './grounding';
 import type { RunStore } from './store';
+import { attachAttackPath as attachAttackPathDoc } from '../../findings/attachAttackPath';
 import { EMIT_TOOL_NAMES } from './types';
 import type {
   AgentSpec,
@@ -238,6 +239,62 @@ function emitTools(): AgentTool[] {
         await ctx.emitter.step('investigation.requested', `ask ${a.agent}: ${a.question}`, r);
         ctx.emitter.global('investigation.requested', { requestId: r.id, target: r.target });
         return { queued: true, requestId: r.id };
+      },
+    },
+    {
+      name: 'attachAttackPath',
+      description:
+        'Attach a composed attack path (a chain of already-CONFIRMED findings linked by a real graph path) to one of those findings. Every finding referenced must be status "open" and verificationResult "CONFIRMED"; the path must come from a real getAttackPath call in this run. Never invents a chain over a finding that is not confirmed.',
+      schema: z.object({
+        findingId: z.string().describe('the Finding this chain narrative attaches to'),
+        chainFindingIds: z
+          .array(z.string())
+          .min(1)
+          .describe('all findings composing this chain, including findingId itself'),
+        path: z.object({
+          nodes: z.array(z.string()),
+          edges: z.array(z.object({ from: z.string(), to: z.string(), type: z.string() })),
+        }),
+        narrative: z.string().min(20).max(1000),
+        evidence,
+      }),
+      run: async (ctx, a) => {
+        const findings = await ctx.engine.getFindings({});
+        const target = findings.find((f) => f.id === a.findingId);
+        if (!target)
+          throw fail(
+            'not_found',
+            `No finding "${a.findingId}" in this project`,
+            findings.map((f) => f.id),
+          );
+        if (target.status !== 'open' || target.verificationResult !== 'CONFIRMED')
+          throw fail(
+            'rejected',
+            `Finding ${a.findingId} is not an open CONFIRMED finding (status=${target.status}, verificationResult=${target.verificationResult}); cannot attach a chain to it`,
+          );
+        for (const id of a.chainFindingIds) {
+          const f = findings.find((x) => x.id === id);
+          if (!f) throw fail('not_found', `Chain references unknown finding "${id}"`);
+          if (f.verificationResult !== 'CONFIRMED')
+            throw fail(
+              'rejected',
+              `Chain finding "${id}" is not CONFIRMED (${f.verificationResult}); a chain may only compose confirmed pieces`,
+            );
+        }
+        const cited = a.evidence.map((n: number) =>
+          ctx.calls.find((c: ToolCallRecord) => c.seq === n),
+        );
+        if (!cited.some((c: ToolCallRecord | undefined) => c?.ok && c.tool === 'getAttackPath'))
+          throw fail('invalid_evidence', 'Must cite a successful getAttackPath call from this run');
+
+        const updated = await attachAttackPathDoc(ctx.projectId, a.findingId, {
+          findingIds: a.chainFindingIds,
+          nodes: a.path.nodes,
+          edges: a.path.edges,
+          narrative: a.narrative,
+        });
+        await ctx.emitter.step('observation', `attack path attached to ${a.findingId}`, updated);
+        return { attached: true, findingId: a.findingId };
       },
     },
     {

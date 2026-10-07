@@ -238,3 +238,28 @@ export interface RouteFilter {
   limit?: number;
   offset?: number;
 }
+
+/** read-only view of a Finding for the Attack-Path agent to compose over (C8) */
+export interface FindingSummary {
+  id: string;
+  type: string;
+  severity: string;
+  status: 'open' | 'resolved' | 'regressed' | 'rejected';
+  verificationResult: 'CONFIRMED' | string;
+  affectedNodes: string[];
+  title: string;
+  createdAt: string;
+}
+
+export interface FindingFilter {
+  status?: FindingSummary['status'];
+  type?: string;
+  verificationResult?: string;
+}
+
+export interface AttackPathQuery {
+  from: string;
+  to: string;
+  edgeTypes?: string[];
+  maxDepth?: number;
+}

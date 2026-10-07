@@ -6,15 +6,19 @@ import { deriveAuthorization, isBlocking } from './authorization';
 import { FactError } from './errors';
 import { resolveByName, resolveFn, resolveRoute } from './resolve';
 import { AUTHZ_DEPTH, DATA_DEPTH, Snapshot } from './snapshot';
+import { models } from '../db/collections';
 import type {
   AccessFact,
   AssetFact,
+  AttackPathQuery,
   AuthzEvidence,
   CallNode,
   DataflowFact,
   DbOpFact,
   DependencyFact,
   ExposureFact,
+  FindingFilter,
+  FindingSummary,
   GapFact,
   InputFact,
   JwtUsageFact,
@@ -729,6 +733,37 @@ export class FactEngine {
       for (const x of this.exposureOf(s, fn)) if (!asset || x.asset === asset) out.push(x);
     }
     return out.sort((a, b) => byStr(a.asset, b.asset) || byStr(a.fn, b.fn));
+  }
+
+  /**
+   * Findings (C7's Verification Engine output) for the Attack-Path agent to compose over.
+   * The only place FactEngine reads Mongo outside the graph snapshot — findings are a
+   * separate collection, not graph nodes.
+   */
+  async getFindings(opts: FindingFilter = {}): Promise<FindingSummary[]> {
+    const q: Record<string, unknown> = { projectId: this.store.projectId };
+    if (opts.status) q.status = opts.status;
+    if (opts.type) q.type = opts.type;
+    if (opts.verificationResult) q['verificationResult.result'] = opts.verificationResult;
+    const docs = await models.findings.find(q).sort({ createdAt: -1 }).limit(200).lean();
+    return docs.map((d: any) => ({
+      id: d.id,
+      type: d.type,
+      severity: d.severity,
+      status: d.status,
+      verificationResult: d.verificationResult?.result,
+      affectedNodes: d.affectedNodes ?? [],
+      title: `${d.type} on ${d.affectedNodes?.[0] ?? '(unknown)'}`,
+      createdAt: d.createdAt,
+    }));
+  }
+
+  /** labeled graph path between two node ids, e.g. a Route and an Asset — wraps the
+   * already-implemented GraphStore.pathDetail. null when unreachable within maxDepth. */
+  async getAttackPath(
+    opts: AttackPathQuery,
+  ): Promise<{ nodes: Node[]; edges: Edge[] } | null> {
+    return this.store.pathDetail(opts.from, opts.to, opts.edgeTypes as any, opts.maxDepth);
   }
 }
 

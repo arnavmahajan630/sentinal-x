@@ -33,6 +33,6 @@ Prefer a small number of well-evidenced hypotheses over many weak ones.`,
   playbooks: ['idor', 'missing-auth', 'privilege-escalation', 'jwt-security'],
   // hypothesisTypes omitted: defaults to vulnerability playbooks whose agent === 'auth',
   // i.e. exactly the four above — mass-assignment is agent:'dataflow', excluded naturally.
-  investigationTargets: ['dataflow'],
+  investigationTargets: ['dataflow', 'attack-path'],
   budget: { maxSteps: 24, maxToolCalls: 60 },
 };

@@ -61,8 +61,12 @@ describe('runFactTool', () => {
       getModelAccess: { model: 'Order' },
       getDependency: { name: 'express' },
       getRoutesTouchingModel: { model: 'User' },
+      getAttackPath: { from: 'Route:GET /api/health', to: 'Route:GET /api/health' },
     };
-    for (const t of FACT_TOOLS) {
+    // getFindings reads a real Mongo collection (C8) — the only FactEngine method that
+    // isn't purely graph-snapshot-backed, so it doesn't fit this fixture-only smoke test.
+    // Covered against a live Mongo connection in test/facts/findings.e2e.test.ts instead.
+    for (const t of FACT_TOOLS.filter((x) => x.name !== 'getFindings')) {
       const r = await runFactTool(e, t.name, minimal[t.name] ?? {});
       expect(r.ok, `${t.name}: ${JSON.stringify(r)}`).toBe(true);
     }
