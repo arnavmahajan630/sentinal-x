@@ -1,4 +1,29 @@
 {
-  "_comment": "Placeholder. C7 defines the real shape: seeded users (User A / User B / admin) for the sandbox target.",
-  "users": []
+  "users": [
+    {
+      "id": "A",
+      "username": "userA",
+      "password": "passA123",
+      "role": "user",
+      "mongoId": "650000000000000000000001"
+    },
+    {
+      "id": "B",
+      "username": "userB",
+      "password": "passB123",
+      "role": "user",
+      "mongoId": "650000000000000000000002"
+    },
+    {
+      "id": "admin",
+      "username": "admin",
+      "password": "adminPass123",
+      "role": "admin",
+      "mongoId": "650000000000000000000003"
+    }
+  ],
+  "orders": {
+    "A": "650000000000000000000011",
+    "B": "650000000000000000000012"
+  }
 }

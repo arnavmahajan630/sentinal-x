@@ -36,6 +36,51 @@ services:
       retries: 10
       start_period: 5s
 
+  sandbox-mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - sandbox-mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  sandbox-seed:
+    build:
+      context: .
+      dockerfile: sandbox/Dockerfile
+    environment:
+      MONGO_URI: mongodb://sandbox-mongo:27017/vulnapp
+    command: ['npx', 'ts-node', '--transpile-only', 'seed.ts']
+    depends_on:
+      sandbox-mongo:
+        condition: service_healthy
+
+  sandbox:
+    build:
+      context: .
+      dockerfile: sandbox/Dockerfile
+    restart: unless-stopped
+    environment:
+      JWT_SECRET: secret123
+      MONGO_URI: mongodb://sandbox-mongo:27017/vulnapp
+      PORT: 3000
+    ports:
+      - '3001:3000'
+    depends_on:
+      sandbox-mongo:
+        condition: service_healthy
+      sandbox-seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/api/health']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
   dashboard:
     build:
       context: .
@@ -49,3 +94,4 @@ services:
 
 volumes:
   mongo-data:
+  sandbox-mongo-data:

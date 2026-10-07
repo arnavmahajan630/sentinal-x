@@ -2,8 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const authRoutes = require('./routes/auth.routes');
 const ordersRouter = require('./routes/orders.routes');
-const adminRouter = require('./routes/admin.routes.mjs');
-const usersRouter = require('./src/users.routes');
+const adminRouter = require('./routes/admin.routes.mjs').default;
+const usersRouter = require('./src/users.routes').default;
 const { authenticate, requireRole } = require('./middleware/auth');
 
 const app = express();

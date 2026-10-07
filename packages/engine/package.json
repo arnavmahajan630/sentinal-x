@@ -20,7 +20,8 @@
     "graph": "tsx scripts/graph.ts",
     "facts": "tsx scripts/facts.ts",
     "knowledge": "tsx scripts/knowledge.ts",
-    "agent": "tsx scripts/agent.ts"
+    "agent": "tsx scripts/agent.ts",
+    "verify": "tsx scripts/verify.ts"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",
