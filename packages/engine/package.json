@@ -10,7 +10,8 @@
     "./facts": "./src/facts/index.ts",
     "./knowledge": "./src/knowledge/index.ts",
     "./tools": "./src/tools/registry.ts",
-    "./agents": "./src/agents/index.ts"
+    "./agents": "./src/agents/index.ts",
+    "./orchestrator": "./src/orchestrator/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -21,7 +22,8 @@
     "facts": "tsx scripts/facts.ts",
     "knowledge": "tsx scripts/knowledge.ts",
     "agent": "tsx scripts/agent.ts",
-    "verify": "tsx scripts/verify.ts"
+    "verify": "tsx scripts/verify.ts",
+    "assess": "tsx scripts/assess.ts"
   },
   "dependencies": {
     "@langchain/core": "^0.3.0",

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import mongoose from 'mongoose';
 import type { Config } from '../config';
 import { models } from '../db/collections';
 import { bus, EVENTS_CHANNEL } from '../bus';
@@ -62,14 +63,16 @@ export async function buildFinding(
     updatedAt: now,
   };
 
-  await models.findings.create(finding);
-  await models.security_events.create({
-    projectId: finding.projectId,
-    ts: new Date(),
-    type: 'finding.created',
-    summary: `${finding.type} CONFIRMED (${finding.severity})`,
-    findingId: finding.id,
-  });
+  if (mongoose.connection.readyState === 1) {
+    await models.findings.create(finding);
+    await models.security_events.create({
+      projectId: finding.projectId,
+      ts: new Date(),
+      type: 'finding.created',
+      summary: `${finding.type} CONFIRMED (${finding.severity})`,
+      findingId: finding.id,
+    });
+  }
   bus.publish(EVENTS_CHANNEL, {
     kind: 'finding.created',
     projectId: finding.projectId,
