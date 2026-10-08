@@ -5,3 +5,4 @@ export * from './db/collections';
 export * from './llm';
 export * from './health';
 export * from './orchestrator';
+export * from './change';

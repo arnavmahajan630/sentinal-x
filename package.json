@@ -25,7 +25,8 @@
     "facts": "npm run facts -w @sentinelx/engine --",
     "knowledge": "npm run knowledge -w @sentinelx/engine --",
     "agent": "npm run agent -w @sentinelx/engine --",
-    "assess": "npm run assess -w @sentinelx/engine --"
+    "assess": "npm run assess -w @sentinelx/engine --",
+    "watch": "npm run watch -w @sentinelx/engine --"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
