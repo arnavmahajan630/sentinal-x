@@ -3,6 +3,8 @@ import express from 'express';
 import { getHealth, publicConfig } from '@sentinelx/engine';
 import type { Config } from '@sentinelx/engine';
 
+import { createApiRouter } from './routes/api';
+
 export function createApp(cfg: Config) {
   const app = express();
   app.disable('x-powered-by');
@@ -19,6 +21,9 @@ export function createApp(cfg: Config) {
   app.get('/api/config', (_req, res) => {
     res.json(publicConfig(cfg));
   });
+
+  // SOC Dashboard APIs & SSE
+  app.use('/api', createApiRouter(cfg));
 
   return app;
 }
