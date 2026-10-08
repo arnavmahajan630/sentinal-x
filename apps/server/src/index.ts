@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 // Local dev: read the repo-root .env. In Docker, env comes from compose (file absent → no-op).
 loadEnv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet: true });
 
-const { connectDb, disconnectDb, initCollections, loadConfig } = await import('@sentinelx/engine');
+const { connectDb, disconnectDb, initCollections, loadConfig, getKnowledge, syncKnowledge } =
+  await import('@sentinelx/engine');
 const { createApp } = await import('./app');
 
 const cfg = loadConfig();
@@ -18,7 +19,13 @@ const server = app.listen(cfg.port, () => {
 connectDb(cfg.mongoUrl)
   .then(() => initCollections())
   .then(() => console.log('[sentinel-x] mongo connected, collections ready'))
-  .catch((err) => console.error('[sentinel-x] mongo connection failed:', err.message));
+  .then(() => syncKnowledge(getKnowledge(cfg.playbooksDir)))
+  .then((res) =>
+    console.log(
+      `[sentinel-x] knowledge synced: ${res.added.length} added, ${res.updated.length} updated, ${res.unchanged.length} unchanged`,
+    ),
+  )
+  .catch((err) => console.error('[sentinel-x] startup failed:', err.message));
 
 async function shutdown(signal: string) {
   console.log(`[sentinel-x] ${signal} received, shutting down`);

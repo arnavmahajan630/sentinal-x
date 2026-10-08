@@ -36,6 +36,22 @@ services:
       retries: 10
       start_period: 5s
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGO_URL: mongodb://mongo:27017/sentinelx
+      PLAYBOOKS_DIR: /app/playbooks
+    command: ['node', 'apps/server/dist/scheduler.js']
+    depends_on:
+      server:
+        condition: service_healthy
+
   sandbox-mongo:
     image: mongo:7
     restart: unless-stopped

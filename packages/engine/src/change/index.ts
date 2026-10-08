@@ -5,3 +5,4 @@ export * from './reindex';
 export * from './transitions';
 export * from './watcher';
 export * from './engine';
+export * from './lock';

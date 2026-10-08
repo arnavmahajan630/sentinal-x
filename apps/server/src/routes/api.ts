@@ -13,6 +13,7 @@ import {
   ChangeEngine,
   ProjectWatcher,
   verify,
+  isSchedulerOwned,
 } from '@sentinelx/engine';
 import { sseManager } from '../sse/events';
 
@@ -390,6 +391,10 @@ export function createApiRouter(cfg: Config): Router {
       const project = await models.projects.findOne({ projectId }).lean();
       if (!project || !(project as any).path) {
         return res.status(404).json({ error: 'Project path not found' });
+      }
+
+      if (!activeWatchers.has(projectId) && (await isSchedulerOwned(projectId))) {
+        return res.status(409).json({ error: 'scheduler already watching this project' });
       }
 
       let watcher = activeWatchers.get(projectId);

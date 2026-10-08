@@ -26,7 +26,15 @@ const runScoped = { runId: { type: String, required: true } };
 export const models = {
   projects: define(
     'projects',
-    { projectId: String, path: String, gitHead: String, status: String },
+    {
+      projectId: String,
+      path: String,
+      gitHead: String,
+      status: String,
+      activeRunId: { type: String, default: null },
+      lockedAt: { type: Date, default: null },
+      schedulerOwned: { type: Boolean, default: false },
+    },
     [],
     [{ projectId: 1 }],
   ),
