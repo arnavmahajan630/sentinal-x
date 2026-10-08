@@ -4,3 +4,4 @@ export * from './db/connection';
 export * from './db/collections';
 export * from './llm';
 export * from './health';
+export * from './orchestrator';
