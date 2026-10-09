@@ -13,6 +13,7 @@ export const NODE_TYPES = [
   'Secret',
   'ExternalService',
   'Asset',
+  'Sink',
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 

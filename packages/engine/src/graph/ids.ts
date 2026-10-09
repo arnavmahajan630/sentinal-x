@@ -17,6 +17,7 @@ export const hardcodedSecretNodeId = (file: string, line: number) =>
   nodeId('Secret', `hardcoded:${file}:${line}`);
 export const serviceNodeId = (name: string) => nodeId('ExternalService', name);
 export const middlewareNodeId = (key: string) => nodeId('Middleware', key);
+export const sinkNodeId = (name: string) => nodeId('Sink', name);
 
 export function parseNodeId(id: NodeId): { type: NodeType; key: string } {
   const i = id.indexOf(':');

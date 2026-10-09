@@ -19,10 +19,12 @@ import {
   nodeId,
   projectNodeId,
   routeNodeId,
+  sinkNodeId,
 } from './ids';
 import { isFieldExposed, isIdLikePath, judgeMiddleware } from './policy';
 import { SECRET_NAME_RE, classifyField } from './sensitivity';
 import { serviceFor } from './services';
+import { analyzeTaint } from '../taint/engine';
 import type { EdgeDraft, EdgeType, GraphModel, NodeDraft, NodeId, NodeType } from './types';
 
 export interface GraphBuildInput {
@@ -484,6 +486,95 @@ export function buildGraphModel(input: GraphBuildInput): GraphModel {
           merge,
         );
     });
+  }
+
+  // ── P6.5 taint / dataflow engine upgrade ─────────────────────────────────
+  const taintResult = analyzeTaint(indexed);
+
+  for (const fe of taintResult.fnEdges) {
+    const from = functionNodeId(fe.fromFnId);
+    const to = functionNodeId(fe.toFnId);
+    if (!b.has(from) || !b.has(to)) continue;
+    b.edge(
+      'FLOWS_TO',
+      from,
+      to,
+      {
+        tainted: fe.tainted,
+        possible: fe.possible,
+        sanitized: fe.sanitized,
+        ...(fe.sanitizer ? { sanitizer: fe.sanitizer } : {}),
+        argSources: fe.argSources,
+        via: fe.via,
+        line: fe.line,
+      },
+      (a, n) => ({
+        ...a,
+        tainted: a.tainted || n.tainted,
+        possible: a.possible || n.possible,
+        sanitized: a.sanitized && n.sanitized,
+        argSources: union(a.argSources, n.argSources),
+      }),
+    );
+  }
+
+  for (const se of taintResult.sinkEdges) {
+    const from = functionNodeId(se.fnId);
+    if (!b.has(from)) continue;
+
+    let to: NodeId;
+    if (se.sinkType === 'model') {
+      to = modelNodeId(se.sinkTarget);
+      if (!b.has(to)) continue;
+    } else {
+      to = b.node('Sink', se.sinkTarget, { name: se.sinkTarget, kind: se.sinkType });
+    }
+
+    const opData = {
+      op: se.op,
+      argSources: se.argSources,
+      ...(se.queryShape ? { queryShape: se.queryShape } : {}),
+      tainted: se.tainted,
+      possible: se.possible,
+      sanitized: se.sanitized,
+      ...(se.sanitizer ? { sanitizer: se.sanitizer } : {}),
+      line: se.line,
+      col: se.col,
+    };
+
+    b.edge(
+      'FLOWS_TO',
+      from,
+      to,
+      {
+        ops: [opData],
+        tainted: se.tainted,
+        possible: se.possible,
+        sanitized: se.sanitized,
+        ...(se.sanitizer ? { sanitizer: se.sanitizer } : {}),
+      },
+      (a, n) => {
+        const ops = [...(a.ops ?? [])];
+        for (const no of n.ops ?? []) {
+          const match = ops.find((o: any) => o.op === no.op && o.line === no.line);
+          if (match) {
+            match.argSources = union(match.argSources, no.argSources);
+            match.tainted = match.tainted || no.tainted;
+            match.sanitized = match.sanitized && no.sanitized;
+            if (no.sanitizer) match.sanitizer = no.sanitizer;
+          } else {
+            ops.push(no);
+          }
+        }
+        return {
+          ...a,
+          ops: pushCap(ops, [], CAP.ops),
+          tainted: a.tainted || n.tainted,
+          possible: a.possible || n.possible,
+          sanitized: a.sanitized && n.sanitized,
+        };
+      },
+    );
   }
 
   const declared = new Map<
