@@ -20,6 +20,25 @@ const WRAPPER_RE = /^(async\w*|catch\w*|wrap\w*|\w*handler|try\w*|safe\w*|\w*wra
 const SECRET_KEY_RE =
   /(secret|passw(or)?d|pwd|token|api[_-]?key|apikey|private[_-]?key|auth|credential|salt)/i;
 
+export function isSanitizerName(name: string): boolean {
+  return /^(parseInt|parseFloat|Number|Boolean|ObjectId|escape|sanitize|sanitizeHtml|clean|xss|encodeURIComponent|encodeURI|isMongoId|isValidObjectId|isNumeric|isInt|isUUID|isEmail|isAlphanumeric|whitelist|blacklist|normalizeEmail|stripLow)$/i.test(
+    name,
+  );
+}
+
+export function isSanitizerExpression(calleeText: string, name?: string): boolean {
+  if (name && isSanitizerName(name)) return true;
+  if (/(^|\.)(isMongoId|isValidObjectId|escape|sanitize|clean|xss|toInt|toFloat)$/i.test(calleeText))
+    return true;
+  if (/\b(Types\.ObjectId|mongoose\.Types\.ObjectId)\b/.test(calleeText)) return true;
+  if (/\b(validator\.(is|escape|trim|whitelist|blacklist|stripLow|normalizeEmail|toInt|toFloat))\b/.test(calleeText))
+    return true;
+  if (/\b(DOMPurify\.sanitize)\b/.test(calleeText)) return true;
+  if (/\b(zod|joi|yup|schema)\.(parse|safeParse|validate)\b/i.test(calleeText)) return true;
+  if (/^(sanitize|escape|clean|validate|isValid)[A-Z_]/.test(name ?? '')) return true;
+  return false;
+}
+
 export const isFnNode = (n: Node): boolean =>
   Node.isFunctionDeclaration(n) ||
   Node.isFunctionExpression(n) ||
@@ -133,7 +152,8 @@ export class Ctx {
   }
 
   text(n: Node, max = 120): string {
-    const t = n.getText().replace(/\s+/g, ' ').trim();
+    let t = n.getText().replace(/\s+/g, ' ').trim();
+    t = t.replace(/['"`][^'"`]*(?:secret|password|passwd|hunter|token|credential)[^'"`]*['"`]/gi, "'***'");
     return t.length > max ? t.slice(0, max - 1) + '…' : t;
   }
 
@@ -365,7 +385,9 @@ export class Ctx {
         const name = nameNode.getText();
         if (reassigned.has(name)) continue;
         const src = this.srcOf(init, scope);
-        if (src.kind === 'input' || src.kind === 'authctx') scope.aliases.set(name, src);
+        if (src.kind === 'input' || src.kind === 'authctx' || (src.kind === 'var' && src.sanitized)) {
+          scope.aliases.set(name, src);
+        }
       } else if (Node.isObjectBindingPattern(nameNode)) {
         const base = this.unwrap(init);
         const isReq = Node.isIdentifier(base) && base.getText() === scope.reqName;
@@ -454,7 +476,9 @@ export class Ctx {
 
     if (Node.isStringLiteral(n) || Node.isNoSubstitutionTemplateLiteral(n)) {
       const v = n.getLiteralText();
-      if (keyName && SECRET_KEY_RE.test(keyName)) return { kind: 'literal', value: maskPreview(v) };
+      if ((keyName && SECRET_KEY_RE.test(keyName)) || SECRET_KEY_RE.test(v)) {
+        return { kind: 'literal', value: maskPreview(v) };
+      }
       return { kind: 'literal', value: v.length > 60 ? v.slice(0, 60) : v };
     }
     if (Node.isNumericLiteral(n)) return { kind: 'literal', value: Number(n.getText()) };
@@ -547,13 +571,29 @@ export class Ctx {
       }
       // String(x), Number(x), ObjectId(x), new ObjectId(x) handled in NewExpression
       if (Node.isIdentifier(callee) && CONVERSIONS.has(callee.getText()) && args[0]) {
-        return this.srcOf(args[0], scope, keyName, depth + 1);
+        const inner = this.srcOf(args[0], scope, keyName, depth + 1);
+        const name = callee.getText();
+        if (name === 'parseInt' || name === 'parseFloat' || name === 'Number' || name === 'Boolean' || name === 'ObjectId') {
+          return { ...inner, sanitized: true, sanitizer: name };
+        }
+        return inner;
       }
       if (Node.isPropertyAccessExpression(callee)) {
         const m = callee.getName();
         if (CONV_METHODS.has(m))
           return this.srcOf(callee.getExpression(), scope, keyName, depth + 1);
-        if (m === 'ObjectId' && args[0]) return this.srcOf(args[0], scope, keyName, depth + 1);
+        if (m === 'ObjectId' && args[0]) {
+          const inner = this.srcOf(args[0], scope, keyName, depth + 1);
+          return { ...inner, sanitized: true, sanitizer: 'ObjectId' };
+        }
+      }
+      if (args[0]) {
+        const calleeText = callee.getText();
+        const m = Node.isPropertyAccessExpression(callee) ? callee.getName() : calleeText;
+        if (isSanitizerExpression(calleeText, m)) {
+          const inner = this.srcOf(args[0], scope, keyName, depth + 1);
+          return { ...inner, sanitized: true, sanitizer: m };
+        }
       }
       return { kind: 'call', text, inputs: this.inputsIn(n) };
     }
@@ -561,8 +601,10 @@ export class Ctx {
     if (Node.isNewExpression(n)) {
       const callee = n.getExpression().getText();
       const args = n.getArguments();
-      if (/ObjectId$/.test(callee) && args[0])
-        return this.srcOf(args[0], scope, keyName, depth + 1);
+      if (/ObjectId$/.test(callee) && args[0]) {
+        const inner = this.srcOf(args[0], scope, keyName, depth + 1);
+        return { ...inner, sanitized: true, sanitizer: 'ObjectId' };
+      }
       return { kind: 'call', text, inputs: this.inputsIn(n) };
     }
 

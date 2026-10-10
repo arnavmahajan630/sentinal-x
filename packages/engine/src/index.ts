@@ -12,4 +12,5 @@ export * from './facts';
 export * from './knowledge';
 export * from './verification';
 export * from './findings';
+export * from './taint/engine';
 export type { AuthEnforcement } from './graph';
