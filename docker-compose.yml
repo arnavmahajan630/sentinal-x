@@ -24,6 +24,9 @@ services:
       PORT: 4000
       MONGO_URL: mongodb://mongo:27017/sentinelx
       PLAYBOOKS_DIR: /app/playbooks
+      SANDBOX_TARGET_URL: http://sandbox:3000
+    volumes:
+      - .:/workspace:ro
     ports:
       - '4000:4000'
     depends_on:
@@ -47,6 +50,9 @@ services:
     environment:
       MONGO_URL: mongodb://mongo:27017/sentinelx
       PLAYBOOKS_DIR: /app/playbooks
+      SANDBOX_TARGET_URL: http://sandbox:3000
+    volumes:
+      - .:/workspace:ro
     command: ['node', 'apps/server/dist/scheduler.js']
     depends_on:
       server:

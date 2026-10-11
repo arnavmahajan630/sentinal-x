@@ -20,6 +20,7 @@ COPY apps/dashboard/package.json apps/dashboard/
 RUN npm ci --omit=dev --workspace @sentinelx/server --include-workspace-root=false
 COPY --from=build /app/apps/server/dist apps/server/dist
 COPY sandbox sandbox
+COPY --from=build /app/packages/engine/test/fixtures/vuln-mern /app/sandbox-target
 COPY playbooks playbooks
 EXPOSE 4000
 CMD ["node", "apps/server/dist/index.js"]

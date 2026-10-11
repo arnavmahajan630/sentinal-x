@@ -18,6 +18,7 @@ import {
 import { useProject } from '@/context/ProjectContext';
 import { fetchOverview } from '@/lib/api';
 import { useGlobalEvents } from '@/hooks/useSse';
+import { LandingView } from '@/components/LandingView';
 import { cn } from '@/lib/utils';
 
 export function Overview() {
@@ -32,25 +33,7 @@ export function Overview() {
   });
 
   if (!activeProject) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-fg">Overview</h1>
-          <p className="mt-1 text-sm text-muted">
-            Analyze. Understand. Verify. Track.
-          </p>
-        </div>
-        <div className="flex h-96 flex-col items-center justify-center p-8 text-center rounded-2xl border bg-surface/40">
-          <div className="grid size-16 place-items-center rounded-2xl bg-primary/10 text-primary mb-4">
-            <ShieldAlert className="size-8" />
-          </div>
-          <h2 className="text-xl font-bold text-fg">No Active Project Loaded</h2>
-          <p className="mt-1.5 max-w-md text-sm text-muted">
-            Load a local MERN application repository using the project switcher in the top bar to inspect its security posture.
-          </p>
-        </div>
-      </div>
-    );
+    return <LandingView />;
   }
 
   const posture = data?.posture || {

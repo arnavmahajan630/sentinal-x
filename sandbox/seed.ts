@@ -5,7 +5,7 @@
 // service); idempotent — clears before inserting.
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import * as mongoose from 'mongoose';
+import mongoose from 'mongoose';
 
 const SEED_PATH = path.resolve(__dirname, 'seed-users.json');
 
