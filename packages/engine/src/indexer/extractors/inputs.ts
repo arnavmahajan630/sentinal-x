@@ -15,7 +15,15 @@ export function extractInputs(ctx: Ctx, ir: FileIR): void {
     const id = `${owner}:${canonicalInput(s)}`;
     let rec = map.get(id);
     if (!rec) {
-      rec = { id, fnId: owner, source: s.source, path: s.path, boundTo: [], loc: ctx.loc(node) };
+      rec = {
+        id,
+        fnId: owner,
+        source: s.source,
+        path: s.path,
+        canonical: canonicalInput(s),
+        boundTo: [],
+        loc: ctx.loc(node),
+      };
       map.set(id, rec);
     }
     if (boundTo && !rec.boundTo.includes(boundTo)) rec.boundTo.push(boundTo);

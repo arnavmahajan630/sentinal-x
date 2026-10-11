@@ -1,6 +1,7 @@
 import { Node, SyntaxKind } from 'ts-morph';
 import type { Ctx } from '../context';
-import type { CallIR, FileIR, FnTraits } from '../types';
+import { isSanitizerExpression } from '../context';
+import type { CallIR, FileIR, FnTraits, SanitizerIR, ValueSrc, VarAssignIR } from '../types';
 
 const AUTH_ERR = new Set([401, 403]);
 const AUTH_HEADER_RE = /^(authorization|x-auth-token|x-access-token|x-api-key)$/i;
@@ -18,6 +19,9 @@ export function extractFunctions(ctx: Ctx, ir: FileIR): void {
       usesReqRes: !!(scope.reqName && scope.resName),
     };
     const calls: CallIR[] = [];
+    const varAssignments: VarAssignIR[] = [];
+    const sanitizers: SanitizerIR[] = [];
+    const returns: ValueSrc[] = [];
     const nextName = scope.nextName ?? 'next';
 
     ctx.own(node, (n) => {
@@ -40,6 +44,19 @@ export function extractFunctions(ctx: Ctx, ir: FileIR): void {
           const s = ctx.srcOf(n.getLeft());
           if (s.kind === 'authctx') traits.setsReqUser = true;
         }
+      } else if (Node.isVariableDeclaration(n)) {
+        const init = n.getInitializer();
+        const nameNode = n.getNameNode();
+        if (init && Node.isIdentifier(nameNode)) {
+          varAssignments.push({
+            varName: nameNode.getText(),
+            value: ctx.srcOf(init, scope, nameNode.getText()),
+            loc: ctx.loc(n),
+          });
+        }
+      } else if (Node.isReturnStatement(n)) {
+        const expr = n.getExpression();
+        if (expr) returns.push(ctx.srcOf(expr));
       } else if (Node.isCallExpression(n)) {
         const callee = n.getExpression();
         const args = n.getArguments();
@@ -47,6 +64,14 @@ export function extractFunctions(ctx: Ctx, ir: FileIR): void {
         const isProp = Node.isPropertyAccessExpression(callee);
         const name = isProp ? callee.getName() : calleeText;
         const object = isProp ? ctx.text(callee.getExpression(), 60) : undefined;
+
+        if (isSanitizerExpression(calleeText, name)) {
+          sanitizers.push({
+            name,
+            target: args[0]?.getText(),
+            loc: ctx.loc(n),
+          });
+        }
 
         // traits
         if (Node.isIdentifier(callee) && callee.getText() === nextName) traits.callsNext = true;
@@ -87,15 +112,33 @@ export function extractFunctions(ctx: Ctx, ir: FileIR): void {
             callee: ctx.text(callee, 80),
             object,
             name: name.length > 60 ? name.slice(0, 60) : name,
+            args: args.map((a, i) =>
+              ctx.srcOf(
+                a,
+                scope,
+                ((name === 'sign' || name === 'verify') && i === 1) ? 'secret' : undefined,
+              ),
+            ),
             loc: ctx.loc(n),
           });
         }
       } else if (Node.isNewExpression(n)) {
         const callee = n.getExpression();
+        const args = n.getArguments();
+        const calleeText = callee.getText();
+        const name = calleeText.split('.').pop() ?? calleeText;
+        if (isSanitizerExpression(calleeText, name)) {
+          sanitizers.push({
+            name,
+            target: args[0]?.getText(),
+            loc: ctx.loc(n),
+          });
+        }
         if (calls.length < 200) {
           calls.push({
             callee: `new ${ctx.text(callee, 70)}`,
-            name: callee.getText().split('.').pop() ?? callee.getText(),
+            name,
+            args: args.map((a) => ctx.srcOf(a)),
             loc: ctx.loc(n),
           });
         }
@@ -110,6 +153,9 @@ export function extractFunctions(ctx: Ctx, ir: FileIR): void {
       async: !!(node as any).isAsync?.(),
       calls,
       traits,
+      varAssignments,
+      sanitizers,
+      returns,
       loc: ctx.loc(node),
     });
   }

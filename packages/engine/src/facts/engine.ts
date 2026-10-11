@@ -14,6 +14,8 @@ import type {
   AuthzEvidence,
   CallNode,
   DataflowFact,
+  DataflowSink,
+  DataflowStep,
   DbOpFact,
   DependencyFact,
   ExposureFact,
@@ -514,49 +516,141 @@ export class FactEngine {
     } else throw new FactError('invalid_argument', 'Provide route (optionally input) or inputId');
 
     return inputs.map((input) => {
-      const steps: DataflowFact['steps'] = [];
-      const sinks: DataflowFact['sinks'] = [];
+      const allPaths: { steps: DataflowStep[]; sink: DataflowSink }[] = [];
+      let anySanitized = false;
+
+      const traverse = (
+        currentFn: Node,
+        currentSteps: DataflowStep[],
+        isSanitized: boolean,
+        sanitizer: string | undefined,
+        visited: Set<string>,
+        depth: number,
+      ) => {
+        if (depth > 10) return;
+        const fname = `${currentFn.props.name}()`;
+
+        for (const fe of s.out(currentFn.id, 'FLOWS_TO')) {
+          const nextNode = s.get(fe.to);
+          if (!nextNode) continue;
+
+          // 1. Function hop
+          if (nextNode.type === 'Function') {
+            if (visited.has(nextNode.id)) continue;
+            if (!(fe.props?.argSources ?? []).includes(input.canonical)) continue;
+
+            const nextSanitized = isSanitized || !!fe.props?.sanitized;
+            const nextSanitizer = fe.props?.sanitizer ?? sanitizer;
+            const hopLoc: LocDTO = {
+              file: s.fileOf(currentFn) ?? '',
+              line: fe.props?.line ?? currentFn.loc?.line ?? 1,
+            };
+
+            const nextStep: DataflowStep = {
+              from: fname,
+              to: `${nextNode.props.name}()`,
+              via: fe.props?.via ?? 'call',
+              edgeType: 'FLOWS_TO',
+              loc: hopLoc,
+            };
+
+            const nextVisited = new Set(visited);
+            nextVisited.add(nextNode.id);
+
+            traverse(
+              nextNode,
+              [...currentSteps, nextStep],
+              nextSanitized,
+              nextSanitizer,
+              nextVisited,
+              depth + 1,
+            );
+          }
+
+          // 2. Model or Sink hop
+          if (nextNode.type === 'Model' || nextNode.type === 'Sink') {
+            const targetName = nextNode.key;
+            for (const o of fe.props?.ops ?? []) {
+              if (!(o.argSources ?? []).includes(input.canonical)) continue;
+
+              const opSanitized = isSanitized || !!fe.props?.sanitized || !!o.sanitized;
+              const opSanitizer = o.sanitizer ?? fe.props?.sanitizer ?? sanitizer;
+
+              if (opSanitized) {
+                anySanitized = true;
+                continue;
+              }
+
+              const keys = queryKeysFor(o.queryShape, input.canonical);
+              const loc: LocDTO = {
+                file: s.fileOf(currentFn) ?? '',
+                line: o.line,
+                ...(o.col ? { col: o.col } : {}),
+              };
+
+              const finalStep: DataflowStep = {
+                from: fname,
+                to: targetName,
+                via: keys.length ? `${o.op}(${keys.join(', ')})` : o.op,
+                edgeType: 'FLOWS_TO',
+                loc,
+              };
+
+              const sink: DataflowSink = {
+                model: targetName,
+                op: o.op,
+                fn: currentFn.key,
+                argSources: o.argSources,
+                ...(o.queryShape ? { queryShape: o.queryShape } : {}),
+                ...(o.select ? { select: o.select } : {}),
+                ...(opSanitizer ? { sanitizer: opSanitizer } : {}),
+                loc,
+              };
+
+              allPaths.push({
+                steps: [...currentSteps, finalStep],
+                sink,
+              });
+            }
+          }
+        }
+      };
+
+      const fallbackSteps: DataflowStep[] = [];
       for (const e of s.out(input.id, 'FLOWS_TO')) {
         const fn = s.get(e.to);
         if (!fn) continue;
-        const fname = `${fn.props.name}()`;
-        steps.push({
+        const initialStep: DataflowStep = {
           from: input.canonical,
-          to: fname,
+          to: `${fn.props.name}()`,
           via: input.boundTo.length ? `read (bound to ${input.boundTo.join(', ')})` : 'read',
           edgeType: 'FLOWS_TO',
           ...(input.loc ? { loc: input.loc } : {}),
-        });
-        for (const fe of s.out(fn.id, 'FLOWS_TO')) {
-          if (!fe.to.startsWith('Model:')) continue;
-          for (const o of fe.props?.ops ?? []) {
-            if (!(o.argSources ?? []).includes(input.canonical)) continue;
-            const keys = queryKeysFor(o.queryShape, input.canonical);
-            const loc: LocDTO = {
-              file: s.fileOf(fn) ?? '',
-              line: o.line,
-              ...(o.col ? { col: o.col } : {}),
-            };
-            steps.push({
-              from: fname,
-              to: fe.to.slice('Model:'.length),
-              via: keys.length ? `${o.op}(${keys.join(', ')})` : o.op,
-              edgeType: 'FLOWS_TO',
-              loc,
-            });
-            sinks.push({
-              model: fe.to.slice('Model:'.length),
-              op: o.op,
-              fn: fn.key,
-              argSources: o.argSources,
-              ...(o.queryShape ? { queryShape: o.queryShape } : {}),
-              ...(o.select ? { select: o.select } : {}),
-              loc,
-            });
+        };
+        fallbackSteps.push(initialStep);
+        traverse(fn, [initialStep], false, undefined, new Set([fn.id]), 0);
+      }
+
+      if (allPaths.length === 0 && anySanitized) {
+        return { input, steps: [], sinks: [] };
+      }
+
+      const seenStepKeys = new Set<string>();
+      const steps: DataflowStep[] = [];
+      const sinks: DataflowSink[] = [];
+
+      for (const p of allPaths) {
+        for (const st of p.steps) {
+          const k = `${st.from}|${st.to}|${st.via}`;
+          if (!seenStepKeys.has(k)) {
+            seenStepKeys.add(k);
+            steps.push(st);
           }
         }
+        sinks.push(p.sink);
       }
-      return { input, steps, sinks };
+
+      return { input, steps: steps.length ? steps : fallbackSteps, sinks };
     });
   }
 
@@ -772,6 +866,7 @@ function queryKeysFor(shape: any, canonical: string, depth = 0): string[] {
   if (!shape || depth > 2) return [];
   if (shape.kind === 'input')
     return `req.${shape.source}${shape.path ? '.' + shape.path : ''}` === canonical ? ['arg0'] : [];
+  if (shape.kind === 'var') return ['arg0'];
   if (shape.kind === 'object') {
     const keys: string[] = [];
     for (const [k, v] of Object.entries<any>(shape.keys ?? {})) {

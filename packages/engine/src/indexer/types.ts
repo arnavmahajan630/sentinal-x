@@ -24,14 +24,14 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'ALL' | '
 export type InputSource = 'params' | 'query' | 'body' | 'headers' | 'cookies';
 
 export type ValueSrc =
-  | { kind: 'input'; source: InputSource; path: string } // req.params.id → path 'id'; whole body → ''
-  | { kind: 'authctx'; path: string } // req.user.id → 'user.id'
-  | { kind: 'var'; name: string }
-  | { kind: 'literal'; value?: string | number | boolean | null }
-  | { kind: 'object'; keys: Record<string, ValueSrc> }
-  | { kind: 'spread'; of: ValueSrc }
-  | { kind: 'call'; text: string; inputs?: string[] } // inputs reaching the call's args (possibly transformed)
-  | { kind: 'other'; text: string; inputs?: string[] };
+  | { kind: 'input'; source: InputSource; path: string; sanitized?: boolean; sanitizer?: string } // req.params.id → path 'id'; whole body → ''
+  | { kind: 'authctx'; path: string; sanitized?: boolean; sanitizer?: string } // req.user.id → 'user.id'
+  | { kind: 'var'; name: string; sanitized?: boolean; sanitizer?: string }
+  | { kind: 'literal'; value?: string | number | boolean | null; sanitized?: boolean; sanitizer?: string }
+  | { kind: 'object'; keys: Record<string, ValueSrc>; sanitized?: boolean; sanitizer?: string }
+  | { kind: 'spread'; of: ValueSrc; sanitized?: boolean; sanitizer?: string }
+  | { kind: 'call'; text: string; inputs?: string[]; sanitized?: boolean; sanitizer?: string } // inputs reaching the call's args (possibly transformed)
+  | { kind: 'other'; text: string; inputs?: string[]; sanitized?: boolean; sanitizer?: string };
 
 // ─── references to functions / middleware / routers ──────────────────────────
 export interface RefIR {
@@ -87,6 +87,19 @@ export interface CallIR {
   /** for member calls `a.b.c()` → object 'a.b', name 'c' */
   object?: string;
   name: string;
+  args?: ValueSrc[];
+  loc: Loc;
+}
+
+export interface VarAssignIR {
+  varName: string;
+  value: ValueSrc;
+  loc?: Loc;
+}
+
+export interface SanitizerIR {
+  name: string;
+  target?: string;
   loc: Loc;
 }
 
@@ -99,6 +112,9 @@ export interface FnIR {
   async: boolean;
   calls: CallIR[];
   traits: FnTraits;
+  varAssignments?: VarAssignIR[];
+  sanitizers?: SanitizerIR[];
+  returns?: ValueSrc[];
   loc: Loc;
 }
 
@@ -136,6 +152,7 @@ export interface InputIR {
   fnId: string;
   source: InputSource;
   path: string;
+  canonical?: string;
   boundTo: string[]; // variables holding this value
   loc: Loc;
 }
