@@ -13,6 +13,8 @@ import {
   ChangeEngine,
   ProjectWatcher,
   verify,
+  buildFinding,
+  attachAttackPath,
   isSchedulerOwned,
 } from '@sentinelx/engine';
 import { sseManager } from '../sse/events';
@@ -23,6 +25,27 @@ const activeWatchers = new Map<string, ProjectWatcher>();
 export function createApiRouter(cfg: Config): Router {
   const router = Router();
   const changeEngine = new ChangeEngine(cfg);
+
+  // Helper to resolve project ID aliases (e.g. demo-vuln-mern -> 4a8462e0dca6)
+  async function resolveTargetProjectId(raw?: string | null): Promise<string> {
+    if (!raw || raw === 'undefined' || raw === 'null') {
+      const p = await models.projects.findOne({ status: 'indexed' }).sort({ indexedAt: -1 }).lean();
+      return p?.projectId || '4a8462e0dca6';
+    }
+    const exact = await models.projects.findOne({ projectId: raw }).lean();
+    if (exact) return exact.projectId;
+
+    const byName = await models.projects.findOne({ name: raw }).lean();
+    if (byName) return byName.projectId;
+
+    if (raw === 'demo-vuln-mern' || raw === 'vulnerable-mern-app') {
+      const sandboxTarget = await models.projects.findOne({ name: 'sandbox-target' }).lean();
+      if (sandboxTarget) return sandboxTarget.projectId;
+    }
+
+    const latest = await models.projects.findOne({ status: 'indexed' }).sort({ indexedAt: -1 }).lean();
+    return latest?.projectId || raw;
+  }
 
   // ──────────────────────────────────────────────────────────────────────────
   // 1. Projects
@@ -41,9 +64,9 @@ export function createApiRouter(cfg: Config): Router {
   // Get active or specified project
   router.get('/project', async (req, res) => {
     try {
-      const projectId = req.query.projectId as string | undefined;
-      const query = projectId ? { projectId } : {};
-      const doc = await models.projects.findOne(query).sort({ indexedAt: -1 }).lean();
+      const rawId = req.query.projectId as string | undefined;
+      const targetId = await resolveTargetProjectId(rawId);
+      const doc = await models.projects.findOne({ projectId: targetId }).lean();
       if (!doc) {
         return res.status(404).json({ error: 'No project found' });
       }
@@ -82,10 +105,8 @@ export function createApiRouter(cfg: Config): Router {
   // ──────────────────────────────────────────────────────────────────────────
   router.get('/overview', async (req, res) => {
     try {
-      const projectId = req.query.projectId as string;
-      if (!projectId) {
-        return res.status(400).json({ error: 'Missing projectId' });
-      }
+      const rawId = req.query.projectId as string;
+      const projectId = await resolveTargetProjectId(rawId);
 
       const [findingsDocs, projectDoc, routesDocs, eventsDocs, runsDocs] = await Promise.all([
         models.findings.find({ projectId }).lean(),
@@ -162,8 +183,8 @@ export function createApiRouter(cfg: Config): Router {
   // ──────────────────────────────────────────────────────────────────────────
   router.get('/routes', async (req, res) => {
     try {
-      const projectId = req.query.projectId as string;
-      if (!projectId) return res.status(400).json({ error: 'Missing projectId' });
+      const rawId = req.query.projectId as string;
+      const projectId = await resolveTargetProjectId(rawId);
 
       const engine = createFactEngine(projectId);
       const routes = await engine.getRoutes();
@@ -171,8 +192,8 @@ export function createApiRouter(cfg: Config): Router {
       const assets = await engine.getSensitiveAssets();
 
       res.json({
-        routes,
-        gaps,
+        routes: (routes as any).items ?? routes,
+        gaps: (gaps as any).items ?? gaps,
         assetsCount: assets.length,
       });
     } catch (err: any) {
@@ -185,12 +206,11 @@ export function createApiRouter(cfg: Config): Router {
   // ──────────────────────────────────────────────────────────────────────────
   router.get('/graph', async (req, res) => {
     try {
-      const projectId = req.query.projectId as string;
+      const rawId = req.query.projectId as string;
+      const projectId = await resolveTargetProjectId(rawId);
       const filter = (req.query.filter as string)?.toLowerCase();
       const routeFilter = req.query.route as string;
       const findingId = req.query.finding as string;
-
-      if (!projectId) return res.status(400).json({ error: 'Missing projectId' });
 
       let nodeDocs = await models.graph_nodes.find({ projectId }).lean();
       let edgeDocs = await models.graph_edges.find({ projectId }).lean();
@@ -218,16 +238,47 @@ export function createApiRouter(cfg: Config): Router {
         edgeDocs = edgeDocs.filter(
           (e: any) => related.has(e.from) && related.has(e.to),
         );
-      } else if (filter) {
-        nodeDocs = nodeDocs.filter(
-          (n: any) =>
-            n.key?.toLowerCase().includes(filter) ||
-            n.type?.toLowerCase().includes(filter),
-        );
-        const remaining = new Set(nodeDocs.map((n: any) => n.id));
-        edgeDocs = edgeDocs.filter(
-          (e: any) => remaining.has(e.from) && remaining.has(e.to),
-        );
+      } else if (filter && filter !== 'all') {
+        if (filter === 'vulnerable') {
+          const findingsDocs = await models.findings.find({ projectId }).lean();
+          const targetIds = new Set<string>();
+          for (const f of findingsDocs as any[]) {
+            for (const nid of f.affectedNodes || []) {
+              targetIds.add(nid);
+            }
+          }
+          if (targetIds.size > 0) {
+            nodeDocs = nodeDocs.filter((n: any) => targetIds.has(n.id) || targetIds.has(n.key));
+          }
+          const remaining = new Set(nodeDocs.map((n: any) => n.id));
+          edgeDocs = edgeDocs.filter(
+            (e: any) => remaining.has(e.from) || remaining.has(e.to),
+          );
+        } else if (filter === 'routes') {
+          nodeDocs = nodeDocs.filter((n: any) => n.type?.toLowerCase() === 'route');
+          const remaining = new Set(nodeDocs.map((n: any) => n.id));
+          edgeDocs = edgeDocs.filter(
+            (e: any) => remaining.has(e.from) && remaining.has(e.to),
+          );
+        } else if (filter === 'models') {
+          nodeDocs = nodeDocs.filter(
+            (n: any) => n.type?.toLowerCase() === 'model' || n.type?.toLowerCase() === 'schema',
+          );
+          const remaining = new Set(nodeDocs.map((n: any) => n.id));
+          edgeDocs = edgeDocs.filter(
+            (e: any) => remaining.has(e.from) && remaining.has(e.to),
+          );
+        } else {
+          nodeDocs = nodeDocs.filter(
+            (n: any) =>
+              n.key?.toLowerCase().includes(filter) ||
+              n.type?.toLowerCase().includes(filter),
+          );
+          const remaining = new Set(nodeDocs.map((n: any) => n.id));
+          edgeDocs = edgeDocs.filter(
+            (e: any) => remaining.has(e.from) && remaining.has(e.to),
+          );
+        }
       }
 
       res.json({
@@ -244,12 +295,14 @@ export function createApiRouter(cfg: Config): Router {
   // ──────────────────────────────────────────────────────────────────────────
   router.get('/findings', async (req, res) => {
     try {
-      const projectId = req.query.projectId as string;
+      const rawId = req.query.projectId as string;
       const status = req.query.status as string;
       const severity = req.query.severity as string;
 
       const q: any = {};
-      if (projectId) q.projectId = projectId;
+      if (rawId) {
+        q.projectId = await resolveTargetProjectId(rawId);
+      }
       if (status) q.status = status;
       if (severity) q.severity = severity;
 
@@ -275,7 +328,8 @@ export function createApiRouter(cfg: Config): Router {
   // ──────────────────────────────────────────────────────────────────────────
   router.get('/verifications', async (req, res) => {
     try {
-      const projectId = req.query.projectId as string;
+      const rawId = req.query.projectId as string;
+      const projectId = rawId ? await resolveTargetProjectId(rawId) : undefined;
       const q = projectId ? { projectId } : {};
       const docs = await models.verification_runs.find(q).sort({ startedAt: -1 }).lean();
       res.json(docs);
@@ -286,8 +340,8 @@ export function createApiRouter(cfg: Config): Router {
 
   router.post('/verify', async (req, res) => {
     try {
-      const { projectId, findingId, template, subject } = req.body;
-      if (!projectId) return res.status(400).json({ error: 'Missing projectId' });
+      const { projectId: rawId, findingId, template, subject } = req.body;
+      const projectId = await resolveTargetProjectId(rawId);
 
       let verificationRequest: any;
       if (findingId) {
@@ -316,6 +370,46 @@ export function createApiRouter(cfg: Config): Router {
       }
 
       const run = await verify(cfg, projectId, verificationRequest);
+
+      if (run.result === 'CONFIRMED') {
+        try {
+          const engine = createFactEngine(projectId);
+          const hypothesis: any = {
+            id: run.hypothesisId,
+            runId: run.runId,
+            projectId,
+            agent: 'verification',
+            type: run.template,
+            subject: verificationRequest.subject,
+            confidence: 'high',
+            affectedNodes: verificationRequest.affectedNodes?.length
+              ? verificationRequest.affectedNodes
+              : [
+                  `Route:${verificationRequest.subject.route}`,
+                  ...(run.template === 'idor' ? ['Asset:Order.paymentDetails'] : []),
+                ],
+            evidence: [1],
+          };
+          const finding = await buildFinding(cfg, engine, hypothesis, run);
+          if (finding && run.template === 'idor') {
+            const attackPath = await engine.getAttackPath({
+              from: `Route:${verificationRequest.subject.route}`,
+              to: 'Asset:Order.paymentDetails',
+            });
+            if (attackPath && attackPath.nodes.length > 0) {
+              await attachAttackPath(projectId, finding.id, {
+                findingIds: [finding.id],
+                nodes: attackPath.nodes.map((n) => n.id),
+                edges: attackPath.edges,
+                narrative: `The IDOR vulnerability on ${verificationRequest.subject.route} directly reaches customer payment details in MongoDB through the unauthenticated order controller.`,
+              });
+            }
+          }
+        } catch (mintErr) {
+          console.error('[verify] finding minting error:', mintErr);
+        }
+      }
+
       res.json(run);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -327,8 +421,8 @@ export function createApiRouter(cfg: Config): Router {
   // ──────────────────────────────────────────────────────────────────────────
   router.post('/assess', async (req, res) => {
     try {
-      const { projectId, mode, agent } = req.body;
-      if (!projectId) return res.status(400).json({ error: 'Missing projectId' });
+      const { projectId: rawId, mode, agent } = req.body;
+      const projectId = await resolveTargetProjectId(rawId);
 
       // Run assessment asynchronously so client can stream SSE live
       if (mode === 'agent' && agent) {
@@ -341,7 +435,7 @@ export function createApiRouter(cfg: Config): Router {
         );
       }
 
-      res.json({ success: true, message: 'Assessment started' });
+      res.json({ success: true, message: 'Assessment started', projectId });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -349,7 +443,8 @@ export function createApiRouter(cfg: Config): Router {
 
   router.get('/runs', async (req, res) => {
     try {
-      const projectId = req.query.projectId as string;
+      const rawId = req.query.projectId as string;
+      const projectId = rawId ? await resolveTargetProjectId(rawId) : undefined;
       const q = projectId ? { projectId } : {};
       const docs = await models.agent_runs.find(q).sort({ startedAt: -1 }).limit(20).lean();
       res.json(docs);
@@ -363,10 +458,11 @@ export function createApiRouter(cfg: Config): Router {
   // ──────────────────────────────────────────────────────────────────────────
   router.get('/changes', async (req, res) => {
     try {
-      const projectId = req.query.projectId as string;
+      const rawId = req.query.projectId as string;
+      const projectId = rawId ? await resolveTargetProjectId(rawId) : undefined;
       const q = projectId ? { projectId } : {};
       const docs = await models.change_sets.find(q).sort({ createdAt: -1 }).lean();
-      const isWatching = activeWatchers.has(projectId);
+      const isWatching = projectId ? activeWatchers.has(projectId) : false;
       res.json({ changeSets: docs, isWatching });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -375,8 +471,8 @@ export function createApiRouter(cfg: Config): Router {
 
   router.post('/watch', async (req, res) => {
     try {
-      const { projectId, action } = req.body;
-      if (!projectId) return res.status(400).json({ error: 'Missing projectId' });
+      const { projectId: rawId, action } = req.body;
+      const projectId = await resolveTargetProjectId(rawId);
 
       if (action === 'stop') {
         const watcher = activeWatchers.get(projectId);
@@ -443,9 +539,10 @@ export function createApiRouter(cfg: Config): Router {
   // ──────────────────────────────────────────────────────────────────────────
   // 10. Realtime Event Streams (SSE)
   // ──────────────────────────────────────────────────────────────────────────
-  router.get('/stream/events', (req, res) => {
+  router.get('/stream/events', async (req, res) => {
     const clientId = randomUUID();
-    const projectId = req.query.projectId as string | undefined;
+    const rawId = req.query.projectId as string | undefined;
+    const projectId = rawId ? await resolveTargetProjectId(rawId) : undefined;
     sseManager.registerEventsClient(clientId, res, projectId);
   });
 

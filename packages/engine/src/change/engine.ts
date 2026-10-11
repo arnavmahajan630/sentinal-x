@@ -8,6 +8,7 @@ import { onChange as orchestratorOnChange } from '../orchestrator/run';
 import type { AssessmentResult } from '../orchestrator/types';
 import { computeGitDiff } from './diff';
 import { reindexChange } from './reindex';
+import { analyzeImpact } from './impact';
 import { transitionFindings } from './transitions';
 import type {
   ChangeSetRecord,
@@ -78,7 +79,10 @@ export class ChangeEngine {
 
     // 3. Partial re-index and graph diff-apply
     const reindexRes = await reindexChange(projectId);
-    const { impact, stats } = reindexRes;
+    let { impact, stats } = reindexRes;
+    if (allChangedFiles.length > 0 && impact.allAffectedNodeIds.length === 0) {
+      impact = await analyzeImpact(projectId, allChangedFiles, reindexRes.changedNodeIds);
+    }
 
     // 4. Initial change_set record
     const changeSet: ChangeSetRecord = {

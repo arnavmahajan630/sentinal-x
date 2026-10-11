@@ -24,10 +24,23 @@ let cachedSeed: { path: string; data: SeedData } | undefined;
 
 async function loadSeedData(seedUsersPath: string): Promise<SeedData> {
   if (cachedSeed?.path === seedUsersPath) return cachedSeed.data;
-  const abs = path.isAbsolute(seedUsersPath)
-    ? seedUsersPath
-    : path.resolve(process.cwd(), seedUsersPath);
-  const raw = await fs.readFile(abs, 'utf8');
+  const candidates = [
+    path.isAbsolute(seedUsersPath) ? seedUsersPath : path.resolve(process.cwd(), seedUsersPath),
+    path.resolve(process.cwd(), '..', seedUsersPath),
+    path.resolve(process.cwd(), '../..', seedUsersPath),
+  ];
+  let raw: string | undefined;
+  for (const c of candidates) {
+    try {
+      raw = await fs.readFile(c, 'utf8');
+      break;
+    } catch {
+      // try next candidate
+    }
+  }
+  if (!raw) {
+    throw new Error(`seed file not found at ${seedUsersPath}`);
+  }
   const data = JSON.parse(raw) as SeedData;
   cachedSeed = { path: seedUsersPath, data };
   return data;

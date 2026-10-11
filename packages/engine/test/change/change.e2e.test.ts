@@ -7,8 +7,11 @@ import { buildGraph } from '../../src/graph';
 import type { Finding } from '../../src/findings/model';
 import type { VerificationRun } from '../../src/verification/engine';
 
+import { fileURLToPath } from 'node:url';
+
 const url = process.env.MONGO_TEST_URL ?? 'mongodb://localhost:27017/sentinelx_test';
-const fixturePath = path.resolve('packages/engine/test/fixtures/vuln-mern');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const fixturePath = path.resolve(__dirname, '../fixtures/vuln-mern');
 
 describe('ChangeEngine e2e (Targeted Re-analysis & Transitions)', () => {
   let mongoAvailable = false;

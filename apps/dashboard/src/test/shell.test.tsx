@@ -71,7 +71,7 @@ describe('app shell', () => {
       'fetch',
       vi.fn(async () => ({ status: 200, json: async () => healthy })),
     );
-    renderAt('/');
+    renderAt('/overview');
     await waitFor(() => expect(screen.getByTestId('health-database')).toHaveTextContent('Healthy'));
     expect(screen.getByTestId('health-engine')).toHaveTextContent('Online');
     expect(screen.getByTestId('health-sandbox')).toHaveTextContent('Not configured');
@@ -82,7 +82,7 @@ describe('app shell', () => {
       'fetch',
       vi.fn(async () => Promise.reject(new Error('down'))),
     );
-    renderAt('/');
+    renderAt('/overview');
     await waitFor(() =>
       expect(screen.getByTestId('health-engine')).toHaveTextContent('Unreachable'),
     );
@@ -90,15 +90,66 @@ describe('app shell', () => {
 });
 
 describe('landing page flow', () => {
-  it('renders landing page at / when no active project exists', () => {
+  it('renders landing page at / when hitting root', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(() => new Promise(() => {})),
     );
-    renderAt('/', null);
+    renderAt('/');
     expect(
-      screen.getByRole('heading', { level: 1, name: /Your Repositories/i }),
+      screen.getByRole('heading', { level: 1, name: /Target Ingestion/i }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/Add Local Repo/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Target Workspaces/i)).toBeInTheDocument();
+  });
+});
+
+describe('attack surface page resilience', () => {
+  it('renders attack surface with partial or missing route properties without throwing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('/api/routes')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              routes: {
+                total: 2,
+                items: [
+                  {
+                    id: 'GET /api/test',
+                    method: 'GET',
+                    path: '/api/test',
+                    fullPath: '/api/test',
+                    protected: false,
+                    // missing handler, file, line
+                  },
+                ],
+              },
+              gaps: [],
+              assetsCount: 0,
+            }),
+          };
+        }
+        if (url.includes('/api/findings')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [],
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => healthy,
+        };
+      }),
+    );
+
+    renderAt('/attack-surface');
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: /Attack Surface/i })).toBeInTheDocument();
+      expect(screen.getAllByText('/api/test').length).toBeGreaterThan(0);
+    });
   });
 });

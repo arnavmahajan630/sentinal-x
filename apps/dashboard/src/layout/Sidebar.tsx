@@ -24,9 +24,8 @@ export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => voi
     <aside className="flex h-full w-60 shrink-0 flex-col border-r bg-surface/80 py-5">
       {/* Brand Header */}
       <NavLink
-        to="/landing"
-        onClick={clearProject}
-        className="flex items-center gap-3 px-4 pb-5 transition-opacity hover:opacity-85 cursor-pointer"
+        to="/"
+        className="flex items-center gap-3 px-4 pb-4 transition-opacity hover:opacity-85 cursor-pointer"
         title="Return to Repositories Landing Page"
       >
         <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-primary via-indigo-600 to-secondary text-white shadow-md shadow-primary/20">
@@ -40,13 +39,28 @@ export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => voi
         </div>
       </NavLink>
 
+      {/* Quick link back to all projects landing */}
+      <div className="px-3 pb-3">
+        <NavLink
+          to="/"
+          className="flex items-center justify-between rounded-lg border border-border/70 bg-surface-alt/40 px-3 py-1.5 text-[12.5px] font-medium text-muted hover:text-fg hover:bg-surface-alt transition-colors"
+          title="Return to Repositories Landing Page"
+        >
+          <div className="flex items-center gap-2">
+            <Layers className="size-3.5 text-primary" />
+            <span>All Projects</span>
+          </div>
+          <span className="text-[10.5px] text-muted">Landing ↗</span>
+        </NavLink>
+      </div>
+
       {/* Primary Navigation */}
       <nav className="flex-1 space-y-0.5 px-3 overflow-y-auto" aria-label="Primary">
         {NAV.map(({ path, label, icon: Icon }) => (
           <NavLink
             key={path}
             to={path}
-            end={path === '/'}
+            end={path === '/overview'}
             className={({ isActive }) =>
               cn(
                 'group flex items-center justify-between rounded-lg border border-transparent px-3 py-2 text-[13.5px] font-medium text-fg/75 transition-colors hover:bg-surface-alt hover:text-fg',
@@ -75,14 +89,13 @@ export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => voi
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
             Active Project
           </span>
-          <button
-            type="button"
-            onClick={clearProject}
-            className="text-[10.5px] text-primary hover:underline cursor-pointer"
-            title="Return to Repositories Landing Page"
+          <NavLink
+            to="/"
+            className="text-[10.5px] font-medium text-primary hover:underline cursor-pointer"
+            title="Return to Repositories Landing Page to switch project"
           >
             Switch
-          </button>
+          </NavLink>
         </div>
         <div className="mt-1 flex items-center gap-2">
           <div className="grid size-7 place-items-center rounded-lg bg-primary/10 text-primary font-semibold text-[11px]">

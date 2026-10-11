@@ -25,7 +25,7 @@ export interface NavItem {
 /** The 9 dashboard views (from the final UI images). */
 export const NAV: NavItem[] = [
   {
-    path: '/',
+    path: '/overview',
     label: 'Overview',
     icon: LayoutDashboard,
     title: 'Overview',

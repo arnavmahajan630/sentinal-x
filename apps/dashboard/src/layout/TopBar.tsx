@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import {
   ChevronDown,
   FolderOpen,
@@ -6,7 +7,6 @@ import {
   GitCommit,
   Moon,
   Play,
-  Search,
   Sun,
   Loader2,
   Layers,
@@ -27,6 +27,16 @@ export function TopBar({ onOpenProjectModal }: { onOpenProjectModal?: () => void
       </button>
       {/* Left: Project Selector & Git Info */}
       <div className="flex items-center gap-3">
+        {/* Back to Landing Page CTA */}
+        <NavLink
+          to="/"
+          className="flex items-center gap-1.5 rounded-lg border bg-surface-alt/70 px-2.5 py-1.5 text-[12.5px] font-semibold text-fg/80 transition-all hover:bg-primary hover:text-white hover:border-primary/50 shadow-xs"
+          title="Return to Repositories Landing Page"
+        >
+          <Layers className="size-3.5 text-primary group-hover:text-white" />
+          <span className="hidden sm:inline">Projects</span>
+        </NavLink>
+
         {/* Project Dropdown */}
         <div className="relative">
           <button
@@ -66,17 +76,16 @@ export function TopBar({ onOpenProjectModal }: { onOpenProjectModal?: () => void
                 ))}
               </div>
               <div className="mt-1 border-t pt-1 space-y-0.5">
-                <button
-                  type="button"
+                <NavLink
+                  to="/"
                   onClick={() => {
                     setProjectDropdownOpen(false);
-                    clearProject();
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-primary hover:bg-primary/10"
                 >
                   <Layers className="size-3.5" />
                   All Repositories / Landing Page
-                </button>
+                </NavLink>
                 <button
                   type="button"
                   onClick={() => {
@@ -113,21 +122,8 @@ export function TopBar({ onOpenProjectModal }: { onOpenProjectModal?: () => void
         )}
       </div>
 
-      {/* Right: Search, Theme Toggle, Run Analysis */}
+      {/* Right: Theme Toggle, Run Analysis */}
       <div className="flex items-center gap-3">
-        {/* Search Bar */}
-        <div className="relative hidden w-64 md:block">
-          <Search className="absolute left-3 top-2.5 size-3.5 text-muted" />
-          <input
-            type="text"
-            placeholder="Search routes, findings, agents..."
-            className="w-full rounded-lg border bg-surface-alt/40 py-1.5 pl-8 pr-8 text-[12.5px] text-fg placeholder:text-muted/70 focus:border-primary/60 focus:outline-none"
-          />
-          <kbd className="absolute right-2.5 top-2 rounded border bg-surface px-1.5 py-0.5 text-[10px] text-muted">
-            ⌘K
-          </kbd>
-        </div>
-
         {/* Theme Toggle */}
         <button
           type="button"

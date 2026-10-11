@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import type { ReactNode } from 'react';
 import { fetchProjects, loadLocalProject, triggerAssessment } from '@/lib/api';
 import type { Project } from '@/lib/api';
+import { DEMO_PROJECTS } from '@/lib/mockData';
 
 interface ProjectContextType {
   activeProject: Project | null;
@@ -38,7 +39,17 @@ export function ProjectProvider({
   children: ReactNode;
   initialProject?: Project | null;
 }) {
-  const [activeProject, setActiveProject] = useState<Project | null>(initialProject);
+  const [activeProject, setActiveProject] = useState<Project | null>(() => {
+    if (initialProject) return initialProject;
+    try {
+      const savedId = localStorage.getItem('sx-active-project');
+      if (savedId) {
+        const found = DEMO_PROJECTS.find((p) => p.projectId === savedId || p.name === savedId);
+        if (found) return found;
+      }
+    } catch {}
+    return DEMO_PROJECTS[0] || null;
+  });
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -49,10 +60,13 @@ export function ProjectProvider({
       const raw = await fetchProjects();
       const list = Array.isArray(raw) ? raw : [];
       setAllProjects(list);
-      // If a project is currently active, keep its data updated
+      // Keep active project matched with live backend or demo catalog
       setActiveProject((prev) => {
-        if (!prev) return null;
-        return list.find((p) => p.projectId === prev.projectId) || prev;
+        const targetId = prev?.projectId || localStorage.getItem('sx-active-project') || 'demo-vuln-mern';
+        const liveMatch = list.find((p) => p.projectId === targetId || p.name === prev?.name);
+        if (liveMatch) return liveMatch;
+        const demoMatch = DEMO_PROJECTS.find((p) => p.projectId === targetId || p.name === prev?.name);
+        return demoMatch || prev || DEMO_PROJECTS[0] || null;
       });
     } catch {
       // Ignore if server unreachable
