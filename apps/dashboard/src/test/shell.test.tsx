@@ -97,9 +97,9 @@ describe('landing page flow', () => {
     );
     renderAt('/');
     expect(
-      screen.getByRole('heading', { level: 1, name: /Target Ingestion/i }),
+      screen.getByRole('heading', { level: 1, name: /Your Repositories/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Target Workspaces/i)).toBeInTheDocument();
+    expect(screen.getByText(/All Projects/i)).toBeInTheDocument();
   });
 });
 

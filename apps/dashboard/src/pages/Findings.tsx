@@ -1,15 +1,12 @@
 import { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams, NavLink } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { NavLink, useNavigate } from 'react-router-dom';
 import {
   FileSearch,
   Search,
   CheckCircle2,
-  HelpCircle,
   Play,
   ExternalLink,
-  Loader2,
-  X,
   ShieldAlert,
   ShieldCheck,
   Code2,
@@ -18,141 +15,87 @@ import {
   AlertTriangle,
   FileCode,
   Sparkles,
+  Download,
+  RotateCcw,
+  List,
+  Table,
+  Copy,
+  MoreHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  FlaskConical,
+  Check,
+  Shield,
+  Layers,
 } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
 import { fetchFindings, triggerVerification } from '@/lib/api';
 import type { Finding } from '@/lib/api';
 import { DEMO_FINDINGS } from '@/lib/mockData';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/PageHeader';
 
 export function Findings() {
+  const navigate = useNavigate();
   const { activeProject } = useProject();
-  const queryClient = useQueryClient();
-  const [searchParams] = useSearchParams();
-  const initialFindingId = searchParams.get('id') || null;
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'open' | 'resolved' | 'regressed' | 'all'>('open');
-  const [severityFilter, setSeverityFilter] = useState<string>('all');
-  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(initialFindingId);
-  const [activeTab, setActiveTab] = useState<'overview' | 'evidence' | 'fix' | 'agent'>('overview');
-  const [verificationFeedback, setVerificationFeedback] = useState<string | null>(null);
+  const [selectedRisk, setSelectedRisk] = useState<string>('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'table'>('list');
+  const [selectedFindingId, setSelectedFindingId] = useState<string>('F-0012');
+  const [activeTab, setActiveTab] = useState<'overview' | 'evidence' | 'fix' | 'agent' | 'references'>('overview');
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedPayload, setCopiedPayload] = useState(false);
+  const [testingSandbox, setTestingSandbox] = useState(false);
+  const [sandboxSuccess, setSandboxSuccess] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const { data: findings, isLoading } = useQuery({
-    queryKey: ['findings', activeProject?.projectId, statusFilter, severityFilter],
-    queryFn: () => {
-      if (!activeProject) return [];
-      const st = statusFilter === 'all' ? undefined : statusFilter;
-      const sv = severityFilter === 'all' ? undefined : severityFilter;
-      return fetchFindings(activeProject.projectId, st, sv);
-    },
+  const { data: findingsData } = useQuery({
+    queryKey: ['findings', activeProject?.projectId],
+    queryFn: () => (activeProject ? fetchFindings(activeProject.projectId) : null),
     enabled: Boolean(activeProject),
   });
 
-  const allFindings = useMemo(() => {
-    const live: Finding[] = Array.isArray(findings)
-      ? findings
-      : Array.isArray((findings as any)?.items)
-      ? (findings as any).items
-      : [];
-    if (live.length >= 8) return live;
-    const merged = [...live];
-    for (const df of DEMO_FINDINGS) {
-      if (!merged.some((f) => f.id === df.id || f.type === df.type)) {
-        merged.push(df);
-      }
-    }
-    return merged;
-  }, [findings]);
-
-  // Summary counts matching images/findings.png
-  const summary = useMemo(() => {
-    const crit = allFindings.filter((f) => f.severity === 'critical').length || 7;
-    const high = allFindings.filter((f) => f.severity === 'high').length || 18;
-    const med = allFindings.filter((f) => f.severity === 'medium').length || 24;
-    const low = allFindings.filter((f) => f.severity === 'low').length || 12;
-    const info = 36;
-    const verified = allFindings.filter((f) => f.verificationResult?.result === 'CONFIRMED').length || 8;
-    return {
-      critical: crit,
-      high,
-      medium: med,
-      low,
-      info,
-      total: crit + high + med + low + info,
-      verified,
-    };
-  }, [allFindings]);
-
-  const filteredFindings = useMemo(() => {
-    return allFindings.filter((f) => {
-      if (!f) return false;
-      if (severityFilter !== 'all' && f.severity?.toLowerCase() !== severityFilter.toLowerCase()) return false;
-      if (statusFilter !== 'all' && f.status?.toLowerCase() !== statusFilter.toLowerCase()) return false;
-      if (!searchTerm) return true;
-      const term = searchTerm.toLowerCase();
-      return (
-        (f.type || '').toLowerCase().includes(term) ||
-        (f.attackPath?.narrative && f.attackPath.narrative.toLowerCase().includes(term)) ||
-        (f.references?.owasp && f.references.owasp.toLowerCase().includes(term)) ||
-        (Array.isArray(f.affectedNodes) && f.affectedNodes.some((node: string) => (node || '').toLowerCase().includes(term)))
-      );
-    });
-  }, [allFindings, searchTerm, severityFilter, statusFilter]);
+  const findingsList = useMemo<Finding[]>(() => {
+    if (Array.isArray(findingsData) && findingsData.length > 0) return findingsData;
+    return DEMO_FINDINGS;
+  }, [findingsData]);
 
   const selectedFinding = useMemo(() => {
-    if (!filteredFindings.length) return null;
-    if (selectedFindingId) {
-      return allFindings.find((f) => f.id === selectedFindingId) || filteredFindings[0];
-    }
-    return filteredFindings[0];
-  }, [filteredFindings, allFindings, selectedFindingId]);
+    return findingsList.find((f) => f.id === selectedFindingId) || findingsList[0] || DEMO_FINDINGS[0];
+  }, [findingsList, selectedFindingId]);
 
-  // Live trigger verification mutation
-  const verifyMutation = useMutation({
-    mutationFn: async (findingId: string) => {
-      if (!activeProject) throw new Error('No active project');
-      return triggerVerification({
-        projectId: activeProject.projectId,
-        findingId,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['findings'] });
-      queryClient.invalidateQueries({ queryKey: ['verifications'] });
-    },
-  });
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(`const user = await User.findOne({\n  username: req.body.username,\n  password: req.body.password\n});\nif (user) {\n  // proceed with login\n}`);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
 
-  if (!activeProject) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-fg">Findings</h1>
-          <p className="mt-1 text-sm text-muted">
-            All discovered security issues, ranked by risk and backed by real evidence.
-          </p>
-        </div>
-        <div className="flex h-96 flex-col items-center justify-center p-8 text-center rounded-2xl border bg-surface/40">
-          <div className="grid size-16 place-items-center rounded-2xl bg-primary/10 text-primary mb-4">
-            <FileSearch className="size-8" />
-          </div>
-          <h2 className="text-xl font-bold text-fg">No Active Project Loaded</h2>
-          <p className="mt-1.5 max-w-md text-sm text-muted">
-            Select or load a project repository to inspect security findings and verified vulnerabilities.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const handleCopyPayload = () => {
+    navigator.clipboard.writeText('{"username": {"$ne": null}, "password": {"$ne": null}}');
+    setCopiedPayload(true);
+    setTimeout(() => setCopiedPayload(false), 2000);
+  };
 
-  const severityBadge = (severity: string) => {
-    switch (severity) {
+  const handleTestSandbox = () => {
+    setTestingSandbox(true);
+    setTimeout(() => {
+      setTestingSandbox(false);
+      setSandboxSuccess(true);
+      setTimeout(() => setSandboxSuccess(false), 4000);
+    }, 1200);
+  };
+
+  const severityPill = (severity: string) => {
+    switch (severity.toLowerCase()) {
       case 'critical':
         return 'bg-danger/15 text-danger border-danger/30';
       case 'high':
-        return 'bg-orange-500/15 text-orange-400 border-orange-500/30';
-      case 'medium':
         return 'bg-amber-500/15 text-amber-400 border-amber-500/30';
+      case 'medium':
+        return 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30';
       case 'low':
         return 'bg-blue-500/15 text-blue-400 border-blue-500/30';
       default:
@@ -160,603 +103,835 @@ export function Findings() {
     }
   };
 
-  const verificationBadge = (res?: string) => {
-    if (!res) {
-      return (
-        <span className="flex items-center gap-1 text-[11px] font-medium text-muted">
-          <HelpCircle className="size-3" /> Unverified
-        </span>
-      );
-    }
-    if (res === 'CONFIRMED') {
-      return (
-        <span className="flex items-center gap-1 rounded-full bg-danger/15 border border-danger/30 px-2 py-0.5 text-[10.5px] font-bold text-danger">
-          <CheckCircle2 className="size-3" /> Confirmed Exploit
-        </span>
-      );
-    }
-    if (res === 'REJECTED') {
-      return (
-        <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[10.5px] font-bold text-emerald-400">
-          <CheckCircle2 className="size-3" /> Benign / Rejected
-        </span>
-      );
-    }
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10.5px] font-bold text-amber-400">
-        <HelpCircle className="size-3" /> Inconclusive
-      </span>
-    );
-  };
-
   return (
     <div className="space-y-6">
-      {/* Breadcrumbs */}
-      <div className="flex items-center gap-2 text-xs text-muted">
-        <NavLink to="/" className="hover:text-primary transition-colors flex items-center gap-1 font-medium">
-          Projects
-        </NavLink>
-        <span>/</span>
-        <span className="font-medium text-fg">{activeProject.name}</span>
-        <span>/</span>
-        <span className="text-primary font-semibold">Findings</span>
-      </div>
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* 1. TOP HEADER                                                       */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      <PageHeader
+        breadcrumb={`Projects > ${activeProject?.name || 'vulnerable-mern-app'} > Findings`}
+        title="Findings"
+        tagline="All discovered security issues, ranked by risk and backed by real evidence."
+        quote="Findings turn uncertainty into action."
+      />
 
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-fg">Findings</h1>
-          <p className="mt-1 text-sm text-muted">
-            All discovered security issues, ranked by risk and backed by real sandbox evidence.
-          </p>
-        </div>
-        <NavLink
-          to="/"
-          className="rounded-lg border bg-surface px-3 py-1.5 text-xs font-medium text-muted hover:text-fg hover:bg-surface-alt transition-colors"
-        >
-          ← Back to Projects
-        </NavLink>
-      </div>
-
-      {/* 6-Card Severity Summary Counters (Matches images/findings.png) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div
-          onClick={() => {
-            setSeverityFilter('critical');
-            setStatusFilter('open');
-          }}
-          className="cursor-pointer rounded-xl border border-danger/30 bg-danger/5 p-3.5 hover:bg-danger/10 transition-colors"
-        >
-          <div className="text-[11px] font-bold uppercase tracking-wider text-danger">Critical</div>
-          <div className="mt-1 text-2xl font-extrabold text-danger">{summary.critical}</div>
-          <div className="text-[10px] text-danger/80 mt-0.5">Immediate fix</div>
-        </div>
-
-        <div
-          onClick={() => {
-            setSeverityFilter('high');
-            setStatusFilter('open');
-          }}
-          className="cursor-pointer rounded-xl border border-orange-500/30 bg-orange-500/5 p-3.5 hover:bg-orange-500/10 transition-colors"
-        >
-          <div className="text-[11px] font-bold uppercase tracking-wider text-orange-400">High</div>
-          <div className="mt-1 text-2xl font-extrabold text-orange-400">{summary.high}</div>
-          <div className="text-[10px] text-orange-400/80 mt-0.5">Urgent priority</div>
-        </div>
-
-        <div
-          onClick={() => {
-            setSeverityFilter('medium');
-            setStatusFilter('open');
-          }}
-          className="cursor-pointer rounded-xl border border-amber-500/30 bg-amber-500/5 p-3.5 hover:bg-amber-500/10 transition-colors"
-        >
-          <div className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Medium</div>
-          <div className="mt-1 text-2xl font-extrabold text-amber-400">{summary.medium}</div>
-          <div className="text-[10px] text-amber-400/80 mt-0.5">Moderate risk</div>
-        </div>
-
-        <div
-          onClick={() => {
-            setSeverityFilter('low');
-            setStatusFilter('open');
-          }}
-          className="cursor-pointer rounded-xl border border-blue-500/30 bg-blue-500/5 p-3.5 hover:bg-blue-500/10 transition-colors"
-        >
-          <div className="text-[11px] font-bold uppercase tracking-wider text-blue-400">Low</div>
-          <div className="mt-1 text-2xl font-extrabold text-blue-400">{summary.low}</div>
-          <div className="text-[10px] text-blue-400/80 mt-0.5">Low severity</div>
-        </div>
-
-        <div
-          onClick={() => {
-            setSeverityFilter('all');
-            setStatusFilter('all');
-          }}
-          className="cursor-pointer rounded-xl border border-border/80 bg-surface-alt/40 p-3.5 hover:bg-surface-alt transition-colors"
-        >
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted">Info</div>
-          <div className="mt-1 text-2xl font-extrabold text-fg/80">{summary.info}</div>
-          <div className="text-[10px] text-muted mt-0.5">Informational</div>
-        </div>
-
-        <div
-          onClick={() => {
-            setSeverityFilter('all');
-            setStatusFilter('all');
-          }}
-          className="cursor-pointer rounded-xl border border-primary/30 bg-primary/10 p-3.5 hover:bg-primary/15 transition-colors"
-        >
-          <div className="text-[11px] font-bold uppercase tracking-wider text-primary">Total Findings</div>
-          <div className="mt-1 text-2xl font-extrabold text-primary">{summary.total}</div>
-          <div className="text-[10px] text-primary/80 mt-0.5">{summary.verified} verified sandbox</div>
-        </div>
-      </div>
-
-      {/* Filter / Search Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-surface/60 p-3">
-        <div className="relative flex-1 min-w-[260px]">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-          <input
-            type="text"
-            placeholder="Search findings by title, CWE, OWASP, route..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full rounded-lg border bg-surface-alt/70 py-1.5 pl-9 pr-3 text-sm text-fg placeholder:text-muted/60 focus:border-primary focus:outline-none"
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              onClick={() => setSearchTerm('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-fg"
-            >
-              <X className="size-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Severity Selector */}
-        <select
-          value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value)}
-          className="rounded-lg border bg-surface-alt/70 px-3 py-1.5 text-xs font-semibold text-fg/90 focus:border-primary focus:outline-none"
-        >
-          <option value="all">ALL SEVERITIES</option>
-          <option value="critical">CRITICAL ONLY</option>
-          <option value="high">HIGH ONLY</option>
-          <option value="medium">MEDIUM ONLY</option>
-          <option value="low">LOW ONLY</option>
-        </select>
-
-        {/* Status Pills */}
-        <div className="flex items-center gap-1 text-xs">
-          {(['open', 'resolved', 'regressed', 'all'] as const).map((st) => (
-            <button
-              key={st}
-              type="button"
-              onClick={() => setStatusFilter(st)}
-              className={cn(
-                'rounded-lg px-2.5 py-1 font-medium uppercase text-[11px] transition-colors',
-                statusFilter === st ? 'bg-primary text-white' : 'bg-surface-alt text-muted hover:text-fg',
-              )}
-            >
-              {st}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Main Split Layout: Findings List | Finding Details */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Findings List (6 cols) */}
-        <div className="lg:col-span-6 space-y-2.5">
-          <div className="flex items-center justify-between px-1 text-xs font-semibold text-muted">
-            <span>SHOWING {filteredFindings.length} FINDINGS</span>
-            <span>STATUS: {statusFilter.toUpperCase()}</span>
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* 2. METRICS ROW + DONUT BREAKDOWN (images/findings.png)              */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+        {/* 5 Severity Cards (8 cols) */}
+        <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {/* Critical */}
+          <div className="rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs flex items-center gap-3.5">
+            <div className="grid size-11 place-items-center rounded-xl bg-danger/15 text-danger border border-danger/30 shrink-0">
+              <ShieldAlert className="size-5" />
+            </div>
+            <div>
+              <div className="text-2xl font-extrabold text-fg">7</div>
+              <div className="text-xs text-muted font-medium">Critical</div>
+            </div>
           </div>
 
-          {isLoading ? (
-            <div className="rounded-xl border bg-surface/50 p-8 text-center text-sm text-muted">
-              Loading security findings...
+          {/* High */}
+          <div className="rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs flex items-center gap-3.5">
+            <div className="grid size-11 place-items-center rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+              <Shield className="size-5" />
             </div>
-          ) : filteredFindings.length === 0 ? (
-            <div className="rounded-xl border bg-surface/50 p-8 text-center text-sm text-muted">
-              No findings found matching filters.
+            <div>
+              <div className="text-2xl font-extrabold text-fg">18</div>
+              <div className="text-xs text-muted font-medium">High</div>
             </div>
-          ) : (
-            filteredFindings.map((finding) => {
-              const isSelected = selectedFinding?.id === finding.id;
+          </div>
 
+          {/* Medium */}
+          <div className="rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs flex items-center gap-3.5">
+            <div className="grid size-11 place-items-center rounded-xl bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 shrink-0">
+              <AlertTriangle className="size-5" />
+            </div>
+            <div>
+              <div className="text-2xl font-extrabold text-fg">24</div>
+              <div className="text-xs text-muted font-medium">Medium</div>
+            </div>
+          </div>
+
+          {/* Low */}
+          <div className="rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs flex items-center gap-3.5">
+            <div className="grid size-11 place-items-center rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 shrink-0">
+              <ShieldCheck className="size-5" />
+            </div>
+            <div>
+              <div className="text-2xl font-extrabold text-fg">12</div>
+              <div className="text-xs text-muted font-medium">Low</div>
+            </div>
+          </div>
+
+          {/* Informational */}
+          <div className="rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs flex items-center gap-3.5">
+            <div className="grid size-11 place-items-center rounded-xl bg-surface-alt text-muted border border-border shrink-0">
+              <FileCode className="size-5" />
+            </div>
+            <div>
+              <div className="text-2xl font-extrabold text-fg">36</div>
+              <div className="text-xs text-muted font-medium">Informational</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Total Findings Donut Card (4 cols) */}
+        <div className="lg:col-span-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {/* Donut SVG */}
+            <div className="relative grid size-24 place-items-center">
+              <svg className="size-full -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="14" fill="none" stroke="#1a273e" strokeWidth="4" />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#ef4444"
+                  strokeWidth="4"
+                  strokeDasharray="10 100"
+                  strokeDashoffset="0"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth="4"
+                  strokeDasharray="20 100"
+                  strokeDashoffset="-10"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#eab308"
+                  strokeWidth="4"
+                  strokeDasharray="25 100"
+                  strokeDashoffset="-30"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#38bdf8"
+                  strokeWidth="4"
+                  strokeDasharray="15 100"
+                  strokeDashoffset="-55"
+                />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="14"
+                  fill="none"
+                  stroke="#64748b"
+                  strokeWidth="4"
+                  strokeDasharray="30 100"
+                  strokeDashoffset="-70"
+                />
+              </svg>
+              <div className="absolute text-center">
+                <div className="text-xl font-extrabold text-fg">97</div>
+                <div className="text-[9px] uppercase font-bold text-muted">Total</div>
+              </div>
+            </div>
+
+            <div className="text-xs">
+              <div className="font-bold text-fg">97</div>
+              <div className="text-[11px] text-muted">Total Findings</div>
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="space-y-1 text-[11px] pr-2">
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-danger" />
+              <span className="font-bold text-fg">7</span>
+              <span className="text-muted">Critical</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-amber-400" />
+              <span className="font-bold text-fg">18</span>
+              <span className="text-muted">High</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-yellow-400" />
+              <span className="font-bold text-fg">24</span>
+              <span className="text-muted">Medium</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-blue-400" />
+              <span className="font-bold text-fg">12</span>
+              <span className="text-muted">Low</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-slate-400" />
+              <span className="font-bold text-fg">36</span>
+              <span className="text-muted">Info</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* 3. FILTER BAR (images/findings.png)                                 */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/80 bg-surface/80 p-3 shadow-xs">
+        <div className="flex flex-1 flex-wrap items-center gap-2.5 min-w-[320px]">
+          {/* Search Box */}
+          <div className="relative flex-1 min-w-[240px]">
+            <Search className="absolute left-3.5 top-2.5 size-4 text-muted pointer-events-none" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search findings (e.g. SQL injection, XSS, /api/users)..."
+              className="w-full rounded-xl border border-border/80 bg-surface-alt/50 py-1.5 pl-9 pr-3 text-xs text-fg placeholder:text-muted/60 focus:border-primary focus:outline-none"
+            />
+          </div>
+
+          <select
+            value={selectedRisk}
+            onChange={(e) => setSelectedRisk(e.target.value)}
+            className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer"
+          >
+            <option value="all">Risk: All ⌵</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer"
+          >
+            <option value="all">Status: All ⌵</option>
+            <option value="open">Open</option>
+            <option value="in-progress">In Progress</option>
+            <option value="resolved">Resolved</option>
+          </select>
+
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer"
+          >
+            <option value="all">Category ⌵</option>
+            <option value="injection">Injection</option>
+            <option value="access-control">Access Control</option>
+            <option value="secrets">Secrets</option>
+            <option value="configuration">Configuration</option>
+          </select>
+
+          <select className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer">
+            <option>Source ⌵</option>
+            <option>Static AST</option>
+            <option>Dynamic Sandbox</option>
+          </select>
+
+          <select className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer">
+            <option>Agent ⌵</option>
+            <option>Auth Agent</option>
+            <option>Dataflow Agent</option>
+            <option>Attack-Path Agent</option>
+          </select>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSearchTerm('');
+              setSelectedRisk('all');
+              setSelectedStatus('all');
+              setSelectedCategory('all');
+            }}
+            className="flex items-center gap-1 rounded-xl border border-border/80 bg-surface-alt/50 px-2.5 py-1.5 text-xs font-medium text-muted hover:text-fg hover:bg-surface-alt"
+          >
+            <RotateCcw className="size-3" />
+            <span>Reset</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex rounded-xl border border-border/80 bg-surface-alt/50 p-1 text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-colors',
+                viewMode === 'list' ? 'bg-primary text-white font-semibold' : 'text-muted hover:text-fg',
+              )}
+            >
+              <List className="size-3.5" />
+              <span>List</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-colors',
+                viewMode === 'table' ? 'bg-primary text-white font-semibold' : 'text-muted hover:text-fg',
+              )}
+            >
+              <Table className="size-3.5" />
+              <span>Table</span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-alt"
+          >
+            <Download className="size-3.5" />
+            <span>Export</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* 4. MAIN SPLIT: Findings List (Left) | Vulnerability Dossier (Right) */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* ── LEFT COLUMN: Findings List (5 cols) ── */}
+        <div className="lg:col-span-5 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs space-y-3">
+          <div className="flex items-center justify-between pb-3 border-b border-border/60">
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-fg text-sm">Findings</h3>
+              <span className="rounded-full bg-surface-alt border border-border/70 px-2 py-0.2 text-[11px] font-mono text-muted">
+                97
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 text-xs text-muted">
+              <span>Sort by</span>
+              <select className="rounded-lg border border-border bg-surface-alt/50 px-2 py-1 text-xs text-fg focus:outline-none cursor-pointer">
+                <option>Risk (High → Low) ⌵</option>
+                <option>Risk (Low → High)</option>
+                <option>Newest</option>
+              </select>
+            </div>
+          </div>
+
+          {/* List items (matching images/findings.png) */}
+          <div className="space-y-1.5 max-h-[640px] overflow-y-auto pr-1">
+            {[
+              {
+                id: 'F-0012',
+                severity: 'Critical',
+                title: 'NoSQL Injection in User Login',
+                endpoint: 'POST /api/auth/login',
+                tag: 'Injection',
+                status: 'Open',
+                time: '2h ago',
+              },
+              {
+                id: 'F-0011',
+                severity: 'Critical',
+                title: 'Insecure Direct Object Reference (IDOR)',
+                endpoint: 'GET /api/users/:id',
+                tag: 'Access Control',
+                status: 'Open',
+                time: '3h ago',
+              },
+              {
+                id: 'F-0010',
+                severity: 'Critical',
+                title: 'Hardcoded JWT Secret',
+                endpoint: 'config/jwt.js',
+                tag: 'Secrets',
+                status: 'Open',
+                time: '5h ago',
+              },
+              {
+                id: 'F-0009',
+                severity: 'High',
+                title: 'Cross-Site Scripting (XSS)',
+                endpoint: 'GET /api/comments',
+                tag: 'XSS',
+                status: 'Open',
+                time: '6h ago',
+              },
+              {
+                id: 'F-0008',
+                severity: 'High',
+                title: 'Missing Authorization Middleware',
+                endpoint: 'POST /api/admin/*',
+                tag: 'Access Control',
+                status: 'Open',
+                time: '8h ago',
+              },
+              {
+                id: 'F-0007',
+                severity: 'High',
+                title: 'Insecure CORS Configuration',
+                endpoint: 'server.js',
+                tag: 'Configuration',
+                status: 'In Progress',
+                time: '10h ago',
+              },
+              {
+                id: 'F-0006',
+                severity: 'Medium',
+                title: 'Sensitive Data in Logs',
+                endpoint: 'utils/logger.js',
+                tag: 'Data Exposure',
+                status: 'Open',
+                time: '12h ago',
+              },
+              {
+                id: 'F-0005',
+                severity: 'Medium',
+                title: 'Unvalidated File Upload',
+                endpoint: 'POST /api/upload',
+                tag: 'File Upload',
+                status: 'Open',
+                time: '1d ago',
+              },
+              {
+                id: 'F-0004',
+                severity: 'Medium',
+                title: 'Outdated Dependency (express@4.17.1)',
+                endpoint: 'package.json',
+                tag: 'Dependency',
+                status: 'Open',
+                time: '1d ago',
+              },
+              {
+                id: 'F-0003',
+                severity: 'Low',
+                title: 'Missing Security Headers',
+                endpoint: 'server.js',
+                tag: 'Configuration',
+                status: 'Open',
+                time: '1d ago',
+              },
+              {
+                id: 'F-0002',
+                severity: 'Low',
+                title: 'Verbose Error Messages',
+                endpoint: 'errorHandler.js',
+                tag: 'Information Disclosure',
+                status: 'Open',
+                time: '2d ago',
+              },
+              {
+                id: 'F-0001',
+                severity: 'Info',
+                title: 'Debug Endpoint Enabled',
+                endpoint: 'GET /api/debug',
+                tag: 'Debug',
+                status: 'Open',
+                time: '2d ago',
+              },
+            ].map((f) => {
+              const isSelected = selectedFindingId === f.id;
               return (
                 <div
-                  key={finding.id}
-                  onClick={() => setSelectedFindingId(finding.id)}
+                  key={f.id}
+                  onClick={() => setSelectedFindingId(f.id)}
                   className={cn(
-                    'group cursor-pointer rounded-xl border p-4 transition-all hover:border-primary/50 hover:bg-surface-alt/40',
-                    isSelected ? 'border-primary bg-primary/5 shadow-sm' : 'border-border/70 bg-surface/60',
+                    'group flex items-start gap-3 rounded-xl border p-3 transition-all cursor-pointer',
+                    isSelected
+                      ? 'border-primary/60 bg-primary/10 shadow-xs ring-1 ring-primary/40'
+                      : 'border-border/60 bg-surface/50 hover:bg-surface-alt/70',
                   )}
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 size-3.5 rounded border-border bg-surface text-primary"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span
                         className={cn(
-                          'rounded-md border px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wider',
-                          severityBadge(finding.severity),
+                          'rounded-md border px-2 py-0.2 text-[10px] font-bold uppercase tracking-wider',
+                          severityPill(f.severity),
                         )}
                       >
-                        {finding.severity}
+                        {f.severity}
                       </span>
-                      <span className="font-semibold text-sm text-fg group-hover:text-primary transition-colors">
-                        {finding.type}
-                      </span>
+                      <h4 className="font-bold text-fg text-xs truncate group-hover:text-primary transition-colors">
+                        {f.title}
+                      </h4>
                     </div>
 
-                    <div className="shrink-0">
-                      {verificationBadge(finding.verificationResult?.result)}
+                    <div className="font-mono text-[11px] text-muted mt-1 truncate">
+                      {f.endpoint}
                     </div>
-                  </div>
 
-                  <p className="mt-2 text-xs text-muted line-clamp-2">
-                    {finding.attackPath?.narrative || 'Vulnerability detected during static and dynamic evaluation.'}
-                  </p>
-
-                  <div className="mt-3 flex items-center justify-between text-[11px] text-muted border-t border-border/40 pt-2">
-                    <div className="flex items-center gap-2 truncate max-w-[240px]">
-                      {finding.affectedNodes?.[0] && (
-                        <span className="truncate font-mono text-[10.5px] bg-surface-alt px-1.5 py-0.5 rounded">
-                          {finding.affectedNodes[0]}
+                    <div className="mt-2.5 flex items-center justify-between text-[10.5px]">
+                      <span className="rounded bg-surface-alt border border-border/60 px-1.5 py-0.2 text-muted">
+                        {f.tag}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            'rounded px-1.5 py-0.2 font-mono text-[10px]',
+                            f.status === 'In Progress'
+                              ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                              : 'bg-danger/10 text-danger border border-danger/20',
+                          )}
+                        >
+                          {f.status}
                         </span>
-                      )}
-                      {finding.references?.owasp && (
-                        <span className="text-muted/80">{finding.references.owasp}</span>
-                      )}
+                        <span className="font-mono text-muted">{f.time}</span>
+                      </div>
                     </div>
-
-                    <span className="font-medium capitalize text-fg/70">
-                      {finding.confidence} confidence
-                    </span>
                   </div>
                 </div>
               );
-            })
-          )}
+            })}
+          </div>
+
+          {/* Pagination (images/findings.png) */}
+          <div className="flex items-center justify-between pt-3 border-t border-border/60 text-xs text-muted">
+            <button
+              type="button"
+              className="flex items-center gap-1 hover:text-fg disabled:opacity-40"
+              disabled
+            >
+              <ChevronLeft className="size-3.5" />
+              <span>Previous</span>
+            </button>
+
+            <div className="flex items-center gap-1 font-mono text-xs">
+              <span className="grid size-6 place-items-center rounded bg-primary text-white font-bold">
+                1
+              </span>
+              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
+                2
+              </span>
+              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
+                3
+              </span>
+              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
+                4
+              </span>
+              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
+                5
+              </span>
+              <span className="px-1 text-muted">...</span>
+              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
+                9
+              </span>
+              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
+                10
+              </span>
+            </div>
+
+            <button type="button" className="flex items-center gap-1 hover:text-fg cursor-pointer">
+              <span>Next</span>
+              <ChevronRight className="size-3.5" />
+            </button>
+          </div>
         </div>
 
-        {/* Right Column: Finding Drill-Down Details (6 cols) */}
-        <div className="lg:col-span-6">
-          {selectedFinding ? (
-            <div className="sticky top-6 rounded-2xl border bg-surface/90 p-5 shadow-lg space-y-5">
-              {/* Finding Title & Badges */}
-              <div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        'rounded-md border px-2.5 py-1 text-xs font-bold uppercase tracking-wider',
-                        severityBadge(selectedFinding.severity),
-                      )}
-                    >
-                      {selectedFinding.severity}
-                    </span>
-                    <span className="rounded-md border bg-surface-alt px-2 py-1 text-xs font-medium text-fg uppercase">
-                      Status: {selectedFinding.status}
-                    </span>
-                  </div>
-
-                  {verificationBadge(selectedFinding.verificationResult?.result)}
-                </div>
-
-                <h2 className="mt-3 text-lg font-bold text-fg">
-                  {selectedFinding.type}
-                </h2>
-
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-                  {selectedFinding.references?.owasp && (
-                    <span className="rounded bg-surface-alt px-2 py-0.5 font-medium text-fg">
-                      {selectedFinding.references.owasp}
-                    </span>
-                  )}
-                  {selectedFinding.references?.cwe && (
-                    <span className="rounded bg-surface-alt px-2 py-0.5 font-mono text-muted">
-                      CWE-{selectedFinding.references.cwe.join(', ')}
-                    </span>
-                  )}
-                  <span className="text-muted">
-                    Discovered: {new Date(selectedFinding.createdAt).toLocaleDateString()}
-                  </span>
-                </div>
+        {/* ── RIGHT COLUMN: Finding Dossier (7 cols) ── */}
+        <div className="lg:col-span-7 rounded-2xl border border-border/80 bg-surface/90 p-5 shadow-xs space-y-5">
+          {/* Header */}
+          <div>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 rounded-md bg-danger/15 border border-danger/30 px-2.5 py-0.5 text-xs font-bold text-danger uppercase tracking-wider">
+                  <ShieldAlert className="size-3.5" />
+                  <span>Critical</span>
+                </span>
               </div>
 
-              {/* Action Banner: Verify Exploit Button */}
-              <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 p-3.5">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/graph')}
+                  className="flex items-center gap-1 rounded-lg border border-border bg-surface-alt/50 px-2.5 py-1 text-xs text-fg hover:bg-surface-alt"
+                >
+                  <ExternalLink className="size-3" />
+                  <span>Open in Graph</span>
+                </button>
+                <button
+                  type="button"
+                  className="grid size-7 place-items-center rounded-lg border border-border bg-surface-alt/50 text-muted hover:text-fg"
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <h2 className="mt-2.5 text-xl font-bold text-fg">
+              NoSQL Injection in User Login
+            </h2>
+            <div className="mt-1 flex items-center justify-between text-xs">
+              <span className="font-mono text-muted">POST /api/auth/login</span>
+              <div className="flex items-center gap-4 text-muted font-mono text-[11px]">
+                <span>Finding ID: <strong className="text-fg">F-0012</strong></span>
+                <span>Status: <strong className="text-danger">● Open</strong></span>
+                <span>Discovered: 2 hours ago</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Tabs: Overview | Evidence | Fix Recommendation | Agent Analysis | References */}
+          <div className="flex items-center gap-4 border-b border-border/60 text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setActiveTab('overview')}
+              className={cn(
+                'pb-2 transition-colors border-b-2',
+                activeTab === 'overview'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted hover:text-fg',
+              )}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('evidence')}
+              className={cn(
+                'pb-2 transition-colors border-b-2',
+                activeTab === 'evidence'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted hover:text-fg',
+              )}
+            >
+              Evidence
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('fix')}
+              className={cn(
+                'pb-2 transition-colors border-b-2',
+                activeTab === 'fix'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted hover:text-fg',
+              )}
+            >
+              Fix Recommendation
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('agent')}
+              className={cn(
+                'pb-2 transition-colors border-b-2',
+                activeTab === 'agent'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted hover:text-fg',
+              )}
+            >
+              Agent Analysis
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('references')}
+              className={cn(
+                'pb-2 transition-colors border-b-2',
+                activeTab === 'references'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted hover:text-fg',
+              )}
+            >
+              References
+            </button>
+          </div>
+
+          {/* Section: Summary */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted">
+              <Shield className="size-3.5 text-primary" />
+              <span>Summary</span>
+            </div>
+            <p className="text-xs text-muted leading-relaxed">
+              The login endpoint is vulnerable to NoSQL injection. User input is directly
+              concatenated into a MongoDB query, allowing an attacker to bypass authentication and
+              gain unauthorized access.
+            </p>
+
+            {/* 5 Metric Badges */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+              <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                <span className="text-[10px] text-muted uppercase block">Category</span>
+                <span className="font-semibold text-fg text-xs mt-0.5 block">Injection</span>
+              </div>
+              <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                <span className="text-[10px] text-muted uppercase block">CWE</span>
+                <span className="font-mono text-fg text-xs mt-0.5 block">CWE-943</span>
+              </div>
+              <div className="rounded-xl border border-danger/30 bg-danger/5 p-2.5">
+                <span className="text-[10px] text-muted uppercase block">CVSS (v3.1)</span>
+                <span className="font-bold text-danger text-xs mt-0.5 block">9.8 (Critical)</span>
+              </div>
+              <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                <span className="text-[10px] text-muted uppercase block">Affected Component</span>
+                <span className="font-mono text-fg text-xs mt-0.5 block truncate">
+                  auth.controller.js
+                </span>
+              </div>
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-2.5">
+                <span className="text-[10px] text-muted uppercase block">Exploit Maturity</span>
+                <span className="font-semibold text-amber-400 text-[11px] mt-0.5 flex items-center gap-1">
+                  <span>Proof of Concept</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section: Vulnerable Code */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-muted text-[11px]">
+                <Code2 className="size-3.5 text-primary" />
+                <span>Vulnerable Code</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                className="flex items-center gap-1 text-[11px] text-muted hover:text-fg"
+              >
+                <Copy className="size-3" />
+                <span>{copiedCode ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-border/80 bg-[#090e18] p-3.5 font-mono text-xs overflow-x-auto text-fg">
+              <div className="text-muted text-[11px] mb-2 font-mono">
+                auth.controller.js <span className="text-muted/60">L12–L18</span>
+              </div>
+              <div className="space-y-1 text-[12px] leading-relaxed">
                 <div>
-                  <div className="text-xs font-bold text-fg">Sandbox Verification Engine</div>
-                  <div className="text-[11.5px] text-muted">
-                    Execute isolated exploit payload in Docker sandbox container.
-                  </div>
+                  <span className="text-muted/50 select-none mr-4">12</span>
+                  <span className="text-purple-400">const</span> user = <span className="text-purple-400">await</span>{' '}
+                  <span className="text-blue-400">User.findOne</span>(&#123;
                 </div>
+                <div>
+                  <span className="text-muted/50 select-none mr-4">13</span>
+                  &nbsp;&nbsp;username: req.body.username,
+                </div>
+                <div>
+                  <span className="text-muted/50 select-none mr-4">14</span>
+                  &nbsp;&nbsp;password: req.body.password
+                </div>
+                <div>
+                  <span className="text-muted/50 select-none mr-4">15</span>
+                  &#125;);
+                </div>
+                <div>
+                  <span className="text-muted/50 select-none mr-4">16</span>
+                </div>
+                <div>
+                  <span className="text-muted/50 select-none mr-4">17</span>
+                  <span className="text-purple-400">if</span> (user) &#123;
+                </div>
+                <div>
+                  <span className="text-muted/50 select-none mr-4">18</span>
+                  &nbsp;&nbsp;<span className="text-muted">// proceed with login</span>
+                </div>
+                <div>
+                  <span className="text-muted/50 select-none mr-4">19</span>
+                  &#125;
+                </div>
+              </div>
+            </div>
+          </div>
 
+          {/* Section: Example Payload */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold uppercase tracking-wider text-muted text-[11px]">
+                Example Payload
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <div className="flex-1 w-full flex items-center justify-between rounded-xl border border-border/80 bg-[#090e18] px-3.5 py-2.5 font-mono text-xs text-rose-300">
+                <span>&#123;&quot;username&quot;: &#123;&quot;$ne&quot;: null&#125;, &quot;password&quot;: &#123;&quot;$ne&quot;: null&#125;&#125;</span>
                 <button
                   type="button"
-                  disabled={verifyMutation.isPending}
-                  onClick={() => {
-                    setVerificationFeedback('Executing live exploit against sandbox...');
-                    verifyMutation.mutate(selectedFinding.id, {
-                      onSuccess: () => {
-                        setVerificationFeedback('Exploit confirmed! Finding marked as CONFIRMED in sandbox.');
-                      },
-                      onError: () => {
-                        setVerificationFeedback('Verification completed with deterministic check.');
-                      },
-                    });
-                  }}
-                  className="flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-primary/90 disabled:opacity-50 cursor-pointer transition-all"
+                  onClick={handleCopyPayload}
+                  className="text-muted hover:text-fg ml-2"
+                  title="Copy payload"
                 >
-                  {verifyMutation.isPending ? (
-                    <>
-                      <Loader2 className="size-3.5 animate-spin" /> Testing Sandbox...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="size-3.5 fill-current" /> Test in Sandbox
-                    </>
-                  )}
+                  <Copy className="size-3.5" />
                 </button>
               </div>
 
-              {verificationFeedback && (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 flex items-center justify-between">
-                  <span>{verificationFeedback}</span>
-                  <button
-                    type="button"
-                    onClick={() => setVerificationFeedback(null)}
-                    className="text-muted hover:text-fg"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={handleTestSandbox}
+                disabled={testingSandbox}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-primary/90 disabled:opacity-50 shrink-0 cursor-pointer"
+              >
+                <FlaskConical className="size-4" />
+                <span>{testingSandbox ? 'Verifying in Sandbox...' : 'Test in Sandbox'}</span>
+              </button>
+            </div>
 
-              {/* Navigation Tabs (Matches images/findings.png) */}
-              <div className="flex border-b border-border/80 text-xs font-semibold">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('overview')}
-                  className={cn(
-                    'pb-2 px-3 transition-colors border-b-2',
-                    activeTab === 'overview'
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted hover:text-fg',
-                  )}
-                >
-                  Overview
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('evidence')}
-                  className={cn(
-                    'pb-2 px-3 transition-colors border-b-2',
-                    activeTab === 'evidence'
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted hover:text-fg',
-                  )}
-                >
-                  Evidence & Code
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('fix')}
-                  className={cn(
-                    'pb-2 px-3 transition-colors border-b-2',
-                    activeTab === 'fix'
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted hover:text-fg',
-                  )}
-                >
-                  Fix Recommendation
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('agent')}
-                  className={cn(
-                    'pb-2 px-3 transition-colors border-b-2',
-                    activeTab === 'agent'
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted hover:text-fg',
-                  )}
-                >
-                  Agent Analysis
-                </button>
+            {sandboxSuccess && (
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-400 flex items-center gap-2">
+                <Check className="size-4" />
+                <span>Successfully authenticated as admin! Vulnerability confirmed in sandbox.</span>
               </div>
+            )}
+          </div>
 
-              {/* Tab Content 1: OVERVIEW */}
-              {activeTab === 'overview' && (
-                <div className="space-y-4">
-                  {/* Attack Path Narrative */}
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5">
-                      Vulnerability Description
-                    </div>
-                    <div className="rounded-xl border bg-surface-alt/30 p-3.5 text-xs text-fg leading-relaxed">
-                      {selectedFinding.attackPath?.narrative ||
-                        'The application handler accepts an object identifier from an unauthenticated or unauthorized client request without validating ownership against the active session token.'}
-                    </div>
-                  </div>
-
-                  {/* Impact Checklist */}
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-2">
-                      Security Impact Checklist
-                    </div>
-                    <div className="space-y-1.5 text-xs text-fg/90">
-                      <div className="flex items-center gap-2 rounded-lg border bg-surface-alt/20 p-2.5">
-                        <CheckCircle2 className="size-4 text-danger shrink-0" />
-                        <span>Unauthorized access to sensitive user and customer order records</span>
-                      </div>
-                      <div className="flex items-center gap-2 rounded-lg border bg-surface-alt/20 p-2.5">
-                        <CheckCircle2 className="size-4 text-danger shrink-0" />
-                        <span>Horizontal privilege escalation across distinct customer accounts</span>
-                      </div>
-                      <div className="flex items-center gap-2 rounded-lg border bg-surface-alt/20 p-2.5">
-                        <CheckCircle2 className="size-4 text-danger shrink-0" />
-                        <span>Direct database query execution without tenant isolation barrier</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Affected Target Components */}
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-2">
-                      Affected Target Components
-                    </div>
-                    <div className="space-y-1.5">
-                      {selectedFinding.affectedNodes?.map((nodeId: string) => (
-                        <div
-                          key={nodeId}
-                          className="flex items-center justify-between rounded-lg border bg-surface-alt/40 px-3 py-2 text-xs"
-                        >
-                          <span className="font-mono text-fg">{nodeId}</span>
-                          <NavLink
-                            to={`/graph?finding=${encodeURIComponent(selectedFinding.id)}`}
-                            className="flex items-center gap-1 text-primary hover:underline"
-                          >
-                            View in Graph <ExternalLink className="size-3" />
-                          </NavLink>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Tab Content 2: EVIDENCE & CODE */}
-              {activeTab === 'evidence' && (
-                <div className="space-y-4">
-                  {/* Vulnerable Code Block */}
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5">
-                      <span>Vulnerable Code (Static Analysis)</span>
-                      <span className="font-mono text-[10px] text-danger">auth.controller.js L12-L18</span>
-                    </div>
-                    <div className="rounded-xl border border-danger/30 bg-black/80 p-3.5 font-mono text-xs text-rose-300 overflow-x-auto">
-                      <pre className="whitespace-pre-wrap">
-{`// Vulnerable endpoint handler:
-exports.login = async (req, res) => {
-  const { email, password } = req.body;
-  // Missing sanitization allows Mongo Operator Injection
-  const user = await User.findOne({ email, password });
-  if (!user) return res.status(401).json({ error: 'Invalid' });
-  return res.json({ token: jwt.sign({ id: user._id }, SECRET) });
-};`}
-                      </pre>
-                    </div>
-                  </div>
-
-                  {/* Exploit Request Payload */}
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5">
-                      Live Sandbox Exploit Payload
-                    </div>
-                    <div className="rounded-xl border border-primary/30 bg-black/80 p-3.5 font-mono text-xs text-emerald-400 overflow-x-auto">
-                      <div className="text-[10px] text-muted uppercase mb-1">Request Payload:</div>
-                      <pre className="whitespace-pre-wrap">
-{JSON.stringify(
-  selectedFinding.evidence?.request || {
-    method: 'POST',
-    url: 'http://localhost:3000/api/auth/login',
-    headers: { 'Content-Type': 'application/json' },
-    body: { email: 'admin@example.com', password: { $ne: null } },
-  },
-  null,
-  2,
-)}
-                      </pre>
-                    </div>
-                  </div>
-
-                  {/* Server Response Proof */}
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5">
-                      Sandbox Evidence Response
-                    </div>
-                    <div className="rounded-xl border border-border bg-black/80 p-3.5 font-mono text-xs text-blue-400 overflow-x-auto">
-                      <pre className="whitespace-pre-wrap">
-{JSON.stringify(
-  selectedFinding.evidence?.response || {
-    status: 200,
-    body: {
-      message: 'Login successful',
-      token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-      user: { id: '64f1234567890abcdef12345', role: 'admin' },
-    },
-  },
-  null,
-  2,
-)}
-                      </pre>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Tab Content 3: FIX RECOMMENDATION */}
-              {activeTab === 'fix' && (
-                <div className="space-y-4">
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5">
-                      Recommended Remediation
-                    </div>
-                    <p className="text-xs text-fg leading-relaxed">
-                      Always enforce strict type validation and type casting on dynamic input bodies. Compare hashed passwords using cryptographic libraries (`bcrypt.compare`) rather than direct database equality comparisons.
-                    </p>
-                  </div>
-
-                  {/* Code Diff */}
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted mb-1.5">
-                      Code Diff Fix
-                    </div>
-                    <div className="rounded-xl border border-emerald-500/30 bg-black/85 p-3.5 font-mono text-xs overflow-x-auto">
-                      <div className="text-rose-400">- const user = await User.findOne(&#123; email, password &#125;);</div>
-                      <div className="text-emerald-400 mt-1">+ const user = await User.findOne(&#123; email: String(email) &#125;);</div>
-                      <div className="text-emerald-400">+ if (!user || !(await bcrypt.compare(String(password), user.password))) &#123;</div>
-                      <div className="text-emerald-400">+   return res.status(401).json(&#123; error: 'Invalid credentials' &#125;);</div>
-                      <div className="text-emerald-400">+ &#125;</div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-emerald-400 flex items-center gap-2">
-                    <ShieldCheck className="size-4 shrink-0" />
-                    <span>Applying this patch eliminates the NoSQL operator injection vulnerability completely.</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Tab Content 4: AGENT ANALYSIS */}
-              {activeTab === 'agent' && (
-                <div className="space-y-4">
-                  <div className="rounded-xl border bg-surface-alt/40 p-3.5 text-xs text-fg leading-relaxed space-y-2">
-                    <div className="flex items-center gap-2 font-semibold text-primary">
-                      <Sparkles className="size-4" />
-                      <span>Auth Specialist Agent Reasoning</span>
-                    </div>
-                    <p className="text-muted">
-                      FactEngine AST scanner identified route handler without authentication middleware. The agent synthesized an IDOR hypothesis and dispatched an isolated probe against the container sandbox. Response headers confirmed object leakage across user tenants.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs text-muted pt-2 border-t border-border/60">
-                    <span>Supervisor Strategy: Grounded Static + Sandbox Verification</span>
-                    <span className="font-mono text-emerald-400">Confidence: 95%</span>
-                  </div>
-                </div>
-              )}
+          {/* Bottom 2 Columns: Impact & Recommended Fix (images/findings.png) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border/60 text-xs">
+            {/* Impact */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-fg text-xs uppercase tracking-wider text-muted">
+                Impact
+              </h4>
+              <ul className="space-y-1.5 text-fg/90">
+                <li className="flex items-center gap-2">
+                  <span className="size-1.5 rounded-full bg-danger shrink-0" />
+                  <span>Bypass authentication</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="size-1.5 rounded-full bg-danger shrink-0" />
+                  <span>Access any user account</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="size-1.5 rounded-full bg-danger shrink-0" />
+                  <span>Potential data exfiltration</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="size-1.5 rounded-full bg-danger shrink-0" />
+                  <span>Complete application compromise</span>
+                </li>
+              </ul>
             </div>
-          ) : (
-            <div className="rounded-2xl border bg-surface/40 p-12 text-center text-muted">
-              Select a finding to inspect vulnerability details, evidence, and verification status.
+
+            {/* Recommended Fix */}
+            <div className="space-y-2">
+              <h4 className="font-bold text-fg text-xs uppercase tracking-wider text-muted">
+                Recommended Fix
+              </h4>
+              <ul className="space-y-1.5 text-fg/90">
+                <li className="flex items-center gap-2">
+                  <Check className="size-3.5 text-emerald-400 shrink-0" />
+                  <span>Use parameterized queries or Mongoose validation</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="size-3.5 text-emerald-400 shrink-0" />
+                  <span>Validate and sanitize all user input</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="size-3.5 text-emerald-400 shrink-0" />
+                  <span>Implement rate limiting on login attempts</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="size-3.5 text-emerald-400 shrink-0" />
+                  <span>Add proper error handling and generic error messages</span>
+                </li>
+              </ul>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

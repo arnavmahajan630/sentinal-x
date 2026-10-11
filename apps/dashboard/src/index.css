@@ -9,18 +9,19 @@
  */
 :root {
   --sx-bg: #080f18;
-  --sx-surface: #0e1724;
-  --sx-surface-alt: #132135;
-  --sx-border: #1c2b40;
-  --sx-text: #e6edfd;
-  --sx-text-secondary: #7c8cab;
+  --sx-surface: #0c1322;
+  --sx-surface-alt: #131f33;
+  --sx-border: #1a273e;
+  --sx-text: #f1f5f9;
+  --sx-text-secondary: #94a3b8;
 
-  --sx-primary: #3774fe;
-  --sx-secondary: #784dfd;
-  --sx-success: #21d68e;
-  --sx-warning: #fec438;
-  --sx-danger: #fa3043;
-  --sx-info: #0baefd;
+  --sx-primary: #3b66ff;
+  --sx-primary-hover: #4a72ff;
+  --sx-secondary: #8b5cf6;
+  --sx-success: #10b981;
+  --sx-warning: #f59e0b;
+  --sx-danger: #ef4444;
+  --sx-info: #38bdf8;
   color-scheme: dark;
 }
 
@@ -67,4 +68,34 @@
   * {
     border-color: var(--sx-border);
   }
+}
+
+/* Utilities matching Sentinel-X mockups */
+.gradient-safer {
+  background: linear-gradient(135deg, #a78bfa 0%, #3b66ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.card-glow {
+  transition: all 0.2s ease-in-out;
+}
+.card-glow:hover {
+  box-shadow: 0 0 20px rgba(59, 102, 255, 0.12);
+  border-color: rgba(59, 102, 255, 0.4);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a273e;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #273a5a;
 }
