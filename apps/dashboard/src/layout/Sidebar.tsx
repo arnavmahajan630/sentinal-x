@@ -8,7 +8,7 @@ import { fetchFindings } from '@/lib/api';
 import { HealthPills } from './HealthPills';
 
 export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => void }) {
-  const { activeProject } = useProject();
+  const { activeProject, clearProject } = useProject();
 
   // Query findings to display count badge on Findings nav item
   const { data: findings } = useQuery({
@@ -23,7 +23,12 @@ export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => voi
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r bg-surface/80 py-5">
       {/* Brand Header */}
-      <div className="flex items-center gap-3 px-4 pb-5">
+      <NavLink
+        to="/landing"
+        onClick={clearProject}
+        className="flex items-center gap-3 px-4 pb-5 transition-opacity hover:opacity-85 cursor-pointer"
+        title="Return to Repositories Landing Page"
+      >
         <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-primary via-indigo-600 to-secondary text-white shadow-md shadow-primary/20">
           <Layers className="size-5" />
         </span>
@@ -33,7 +38,7 @@ export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => voi
             Application Security Platform
           </div>
         </div>
-      </div>
+      </NavLink>
 
       {/* Primary Navigation */}
       <nav className="flex-1 space-y-0.5 px-3 overflow-y-auto" aria-label="Primary">
@@ -72,8 +77,9 @@ export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => voi
           </span>
           <button
             type="button"
-            onClick={onOpenProjectModal}
-            className="text-[10.5px] text-primary hover:underline"
+            onClick={clearProject}
+            className="text-[10.5px] text-primary hover:underline cursor-pointer"
+            title="Return to Repositories Landing Page"
           >
             Switch
           </button>

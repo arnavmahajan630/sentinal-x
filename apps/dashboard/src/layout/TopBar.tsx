@@ -9,13 +9,14 @@ import {
   Search,
   Sun,
   Loader2,
+  Layers,
 } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
 import { useTheme } from '@/context/ThemeContext';
 import { cn } from '@/lib/utils';
 
 export function TopBar({ onOpenProjectModal }: { onOpenProjectModal?: () => void }) {
-  const { activeProject, allProjects, selectProject, runAnalysis, isAnalyzing } = useProject();
+  const { activeProject, allProjects, selectProject, clearProject, runAnalysis, isAnalyzing } = useProject();
   const { theme, toggleTheme } = useTheme();
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
 
@@ -64,14 +65,25 @@ export function TopBar({ onOpenProjectModal }: { onOpenProjectModal?: () => void
                   </button>
                 ))}
               </div>
-              <div className="mt-1 border-t pt-1">
+              <div className="mt-1 border-t pt-1 space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProjectDropdownOpen(false);
+                    clearProject();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-primary hover:bg-primary/10"
+                >
+                  <Layers className="size-3.5" />
+                  All Repositories / Landing Page
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setProjectDropdownOpen(false);
                     onOpenProjectModal?.();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-primary hover:bg-primary/10"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-fg/80 hover:bg-surface-alt"
                 >
                   <FolderOpen className="size-3.5" />
                   Load Local Repository...

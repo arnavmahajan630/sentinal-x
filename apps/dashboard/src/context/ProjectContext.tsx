@@ -10,7 +10,8 @@ interface ProjectContextType {
   isLoading: boolean;
   isAnalyzing: boolean;
   currentRunId: string | null;
-  selectProject: (p: Project) => void;
+  selectProject: (p: Project | null) => void;
+  clearProject: () => void;
   loadProjectFromPath: (path: string) => Promise<any>;
   runAnalysis: () => Promise<void>;
   reloadProjects: () => Promise<void>;
@@ -24,13 +25,20 @@ const ProjectContext = createContext<ProjectContextType>({
   isAnalyzing: false,
   currentRunId: null,
   selectProject: () => {},
+  clearProject: () => {},
   loadProjectFromPath: async () => {},
   runAnalysis: async () => {},
   reloadProjects: async () => {},
 });
 
-export function ProjectProvider({ children }: { children: ReactNode }) {
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
+export function ProjectProvider({
+  children,
+  initialProject = null,
+}: {
+  children: ReactNode;
+  initialProject?: Project | null;
+}) {
+  const [activeProject, setActiveProject] = useState<Project | null>(initialProject);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -38,30 +46,36 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
 
   const reloadProjects = useCallback(async () => {
     try {
-      const list = await fetchProjects();
+      const raw = await fetchProjects();
+      const list = Array.isArray(raw) ? raw : [];
       setAllProjects(list);
-      if (list.length > 0 && !activeProject) {
-        // Try restoring last selected from localStorage or pick the first
-        const savedId = localStorage.getItem('sx-active-project');
-        const found = list.find((p) => p.projectId === savedId) || list[0];
-        if (found) {
-          setActiveProject(found);
-        }
-      }
+      // If a project is currently active, keep its data updated
+      setActiveProject((prev) => {
+        if (!prev) return null;
+        return list.find((p) => p.projectId === prev.projectId) || prev;
+      });
     } catch {
       // Ignore if server unreachable
     } finally {
       setIsLoading(false);
     }
-  }, [activeProject]);
+  }, []);
 
   useEffect(() => {
     reloadProjects();
   }, [reloadProjects]);
 
-  const selectProject = (p: Project) => {
+  const selectProject = (p: Project | null) => {
     setActiveProject(p);
-    localStorage.setItem('sx-active-project', p.projectId);
+    if (p) {
+      localStorage.setItem('sx-active-project', p.projectId);
+    } else {
+      localStorage.removeItem('sx-active-project');
+    }
+  };
+
+  const clearProject = () => {
+    selectProject(null);
   };
 
   const loadProjectFromPath = async (repoPath: string) => {
@@ -103,6 +117,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         isAnalyzing,
         currentRunId,
         selectProject,
+        clearProject,
         loadProjectFromPath,
         runAnalysis,
         reloadProjects,

@@ -5,13 +5,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '@/App';
 import { NAV } from '@/nav';
 
-function renderAt(path: string) {
+import { ProjectProvider } from '@/context/ProjectContext';
+import type { Project } from '@/lib/api';
+
+const mockProject: Project = {
+  projectId: 'test-project',
+  name: 'test-app',
+  path: '/test/path',
+  status: 'ready',
+};
+
+function renderAt(path: string, project: Project | null = mockProject) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[path]}>
-        <App />
-      </MemoryRouter>
+      <ProjectProvider initialProject={project}>
+        <MemoryRouter initialEntries={[path]}>
+          <App />
+        </MemoryRouter>
+      </ProjectProvider>
     </QueryClientProvider>,
   );
 }
@@ -74,5 +86,19 @@ describe('app shell', () => {
     await waitFor(() =>
       expect(screen.getByTestId('health-engine')).toHaveTextContent('Unreachable'),
     );
+  });
+});
+
+describe('landing page flow', () => {
+  it('renders landing page at / when no active project exists', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => {})),
+    );
+    renderAt('/', null);
+    expect(
+      screen.getByRole('heading', { level: 1, name: /Your Repositories/i }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/Add Local Repo/i).length).toBeGreaterThan(0);
   });
 });

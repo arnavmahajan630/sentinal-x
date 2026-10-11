@@ -18,7 +18,6 @@ import {
 import { useProject } from '@/context/ProjectContext';
 import { fetchOverview } from '@/lib/api';
 import { useGlobalEvents } from '@/hooks/useSse';
-import { LandingView } from '@/components/LandingView';
 import { cn } from '@/lib/utils';
 
 export function Overview() {
@@ -33,7 +32,34 @@ export function Overview() {
   });
 
   if (!activeProject) {
-    return <LandingView />;
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-fg">Overview</h1>
+          <p className="mt-1 text-sm text-muted">
+            Analyze. Understand. Verify. Track.
+          </p>
+        </div>
+        <div className="flex h-96 flex-col items-center justify-center p-8 text-center rounded-2xl border bg-surface/40">
+          <div className="grid size-16 place-items-center rounded-2xl bg-primary/10 text-primary mb-4">
+            <ShieldAlert className="size-8" />
+          </div>
+          <h2 className="text-xl font-bold text-fg">No Active Project Loaded</h2>
+          <p className="mt-1.5 max-w-md text-sm text-muted">
+            Select a project from the landing page or load a local repository to inspect its security posture.
+          </p>
+          <div className="mt-5">
+            <NavLink
+              to="/landing"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-[13px] font-semibold text-white hover:bg-primary/90"
+            >
+              <span>Go to Repositories Landing Page</span>
+              <ArrowRight className="size-3.5" />
+            </NavLink>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const posture = data?.posture || {
@@ -79,7 +105,7 @@ export function Overview() {
             <div className="text-[11.5px] font-bold uppercase tracking-wider text-muted">
               Application Security Model
             </div>
-            <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-fg">
+            <h1 aria-label="Overview" className="mt-1 text-3xl font-extrabold tracking-tight text-fg">
               Secure What{' '}
               <span className="bg-gradient-to-r from-primary via-indigo-400 to-secondary bg-clip-text text-transparent">
                 You Build
