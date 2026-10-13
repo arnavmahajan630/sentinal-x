@@ -15,36 +15,52 @@ import {
   Layers,
   ShieldAlert,
   ShieldCheck,
-  Check,
-  Loader2,
-  Terminal,
+  FolderPlus,
   Play,
+  RotateCcw,
 } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
-import { DEMO_PROJECTS, DemoProjectItem } from '@/lib/mockData';
+import type { Project } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { IndexingProgressModal, IndexingStats } from './IndexingProgressModal';
+import { GitHubConnectModal } from './GitHubConnectModal';
+import { GitUrlModal } from './GitUrlModal';
+import { LocalFolderModal } from './LocalFolderModal';
 
 export function LandingView() {
   const navigate = useNavigate();
-  const { allProjects, activeProject, selectProject, loadProjectFromPath, isLoading } = useProject();
+  const { allProjects, selectProject, loadProjectFromPath, cloneProject, isLoading } = useProject();
   const { theme, toggleTheme } = useTheme();
 
+  // Filter & Search states
   const [searchFilter, setSearchFilter] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'github' | 'local'>('all');
   const [sortBy, setSortBy] = useState<'last-analyzed' | 'name' | 'findings'>('last-analyzed');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [showLocalModal, setShowLocalModal] = useState(false);
-  const [localInputPath, setLocalInputPath] = useState('/app/sandbox-target');
-  const [localError, setLocalError] = useState<string | null>(null);
 
+  // Modal visibility states
+  const [showGitHubModal, setShowGitHubModal] = useState(false);
+  const [showLocalModal, setShowLocalModal] = useState(false);
+  const [showGitUrlModal, setShowGitUrlModal] = useState(false);
+
+  // In-flight Indexing Progress State
+  const [indexingModalOpen, setIndexingModalOpen] = useState(false);
+  const [indexingComplete, setIndexingComplete] = useState(false);
+  const [indexingName, setIndexingName] = useState('');
+  const [indexingPath, setIndexingPath] = useState('');
+  const [indexingError, setIndexingError] = useState<string | null>(null);
+  const [indexingStats, setIndexingStats] = useState<IndexingStats | null>(null);
+  const [indexedProject, setIndexedProject] = useState<Project | null>(null);
+
+  // Starred projects persistence
   const [starredIds, setStarredIds] = useState<Record<string, boolean>>(() => {
     try {
-      const saved = localStorage.getItem('sx-starred-projects');
-      return saved ? JSON.parse(saved) : { 'demo-vuln-mern': true };
+      const saved = typeof window !== 'undefined' ? window.localStorage?.getItem('sx-starred-projects') : null;
+      return saved ? JSON.parse(saved) : {};
     } catch {
-      return { 'demo-vuln-mern': true };
+      return {};
     }
   });
 
@@ -53,63 +69,93 @@ export function LandingView() {
     const updated = { ...starredIds, [id]: !starredIds[id] };
     setStarredIds(updated);
     try {
-      localStorage.setItem('sx-starred-projects', JSON.stringify(updated));
+      window.localStorage?.setItem('sx-starred-projects', JSON.stringify(updated));
     } catch {
       // ignore
     }
   };
 
-  const handleSelectProject = (project: any) => {
+  const handleSelectProject = (project: Project) => {
     selectProject(project);
-    navigate('/overview');
+    navigate(`/overview?projectId=${encodeURIComponent(project.projectId)}`);
   };
 
-  const handleLoadCustomPath = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!localInputPath.trim()) return;
-    setLocalError(null);
+  // 1. Ingest Local Directory
+  const handleLoadLocal = async (path: string, name?: string) => {
+    setIndexingName(name || path);
+    setIndexingPath(path);
+    setIndexingError(null);
+    setIndexingStats(null);
+    setIndexedProject(null);
+    setIndexingComplete(false);
+    setIndexingModalOpen(true);
+
     try {
-      const res = await loadProjectFromPath(localInputPath.trim());
+      const res = await loadProjectFromPath(path, name);
       if (res?.project) {
-        selectProject(res.project);
-        setShowLocalModal(false);
-        navigate('/overview');
+        setIndexedProject(res.project);
+        setIndexingStats({
+          files: res.stats?.files,
+          routes: res.stats?.routes,
+          functions: res.stats?.functions,
+          models: res.stats?.models,
+          nodes: res.graph?.nodes?.length,
+          edges: res.graph?.edges?.length,
+        });
+        setIndexingComplete(true);
       }
     } catch (err: any) {
-      setLocalError(err.message || 'Failed to load local repository');
+      setIndexingError(err.message || 'Failed to index local repository');
     }
   };
 
-  // Combine real backend projects with demo catalog from landing-ui.png
-  const combinedProjects = useMemo(() => {
-    const list: DemoProjectItem[] = [...DEMO_PROJECTS];
-    for (const p of allProjects) {
-      if (!list.some((d) => d.projectId === p.projectId || d.name === p.name)) {
-        list.push({
-          ...p,
-          description: 'Local workspace indexed by Sentinel-X agentic security engine.',
-          tags: ['Express', 'Node.js', 'TypeScript'],
-          analyzedAgo: 'Recently analyzed',
-          findingsCount: p.stats?.routes ? Math.min(p.stats.routes, 5) : 0,
-          criticalCount: 0,
-          highCount: 1,
-          mediumCount: 2,
-          lowCount: 0,
-          type: 'local',
-          isStarred: false,
-        });
-      }
-    }
-    return list;
-  }, [allProjects]);
+  // 2. Ingest Git URL
+  const handleCloneGit = async (gitUrl: string, name?: string, branch?: string) => {
+    setIndexingName(name || gitUrl);
+    setIndexingPath(gitUrl);
+    setIndexingError(null);
+    setIndexingStats(null);
+    setIndexedProject(null);
+    setIndexingComplete(false);
+    setIndexingModalOpen(true);
 
+    try {
+      const res = await cloneProject(gitUrl, name, branch);
+      if (res?.project) {
+        setIndexedProject(res.project);
+        setIndexingStats({
+          files: res.stats?.files,
+          routes: res.stats?.routes,
+          functions: res.stats?.functions,
+          models: res.stats?.models,
+          nodes: res.graph?.nodes?.length,
+          edges: res.graph?.edges?.length,
+        });
+        setIndexingComplete(true);
+      }
+    } catch (err: any) {
+      setIndexingError(err.message || 'Failed to clone repository');
+    }
+  };
+
+  // 3. Ingest from GitHub Connect
+  const handleImportGitHubRepo = async (pathOrUrl: string, name: string, isRemote?: boolean) => {
+    if (isRemote) {
+      handleCloneGit(pathOrUrl, name);
+    } else {
+      handleLoadLocal(pathOrUrl, name);
+    }
+  };
+
+  // Filter & sort exclusively real projects
   const filteredProjects = useMemo(() => {
-    return combinedProjects
+    return allProjects
       .filter((p) => {
         const matchesSearch =
           p.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
           p.path.toLowerCase().includes(searchFilter.toLowerCase()) ||
-          p.description.toLowerCase().includes(searchFilter.toLowerCase());
+          (p.description && p.description.toLowerCase().includes(searchFilter.toLowerCase())) ||
+          (p.tags && p.tags.some((t) => t.toLowerCase().includes(searchFilter.toLowerCase())));
 
         if (!matchesSearch) return false;
         if (filterType === 'github') return p.type === 'github';
@@ -122,22 +168,22 @@ export function LandingView() {
         if (starA !== starB) return starB - starA;
 
         if (sortBy === 'findings') {
-          return b.findingsCount - a.findingsCount;
+          return (b.findingsCount ?? 0) - (a.findingsCount ?? 0);
         }
         if (sortBy === 'name') {
           return a.name.localeCompare(b.name);
         }
         return 0; // last-analyzed order preserved
       });
-  }, [combinedProjects, searchFilter, filterType, sortBy, starredIds]);
+  }, [allProjects, searchFilter, filterType, sortBy, starredIds]);
 
-  const githubCount = combinedProjects.filter((p) => p.type === 'github').length;
-  const localCount = combinedProjects.filter((p) => p.type === 'local').length;
+  const githubCount = allProjects.filter((p) => p.type === 'github').length;
+  const localCount = allProjects.filter((p) => p.type === 'local').length;
 
   return (
     <div className="min-h-screen bg-bg text-fg font-sans flex flex-col selection:bg-primary/30">
       {/* ─────────────────────────────────────────────────────────────────── */}
-      {/* 1. TOP NAV / HEADER (from images/landing-ui.png)                     */}
+      {/* 1. TOP NAV / HEADER                                                 */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       <header className="border-b border-border/80 bg-surface/80 backdrop-blur-md px-8 py-3.5 sticky top-0 z-40">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
@@ -148,9 +194,7 @@ export function LandingView() {
             </span>
             <div className="leading-tight">
               <div className="text-[17px] font-extrabold tracking-tight text-fg">Sentinel-X</div>
-              <div className="text-[11px] font-medium text-muted">
-                Application Security Platform
-              </div>
+              <div className="text-[11px] font-medium text-muted">Application Security Platform</div>
             </div>
           </div>
 
@@ -161,7 +205,7 @@ export function LandingView() {
               type="text"
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
-              placeholder="Search projects..."
+              placeholder="Search projects by name, path, or framework..."
               className="w-full rounded-xl border border-border/80 bg-surface-alt/50 py-2 pl-10 pr-10 text-xs text-fg placeholder:text-muted/60 focus:border-primary/80 focus:bg-surface-alt/90 focus:outline-none transition-all"
             />
             <span className="absolute right-3 top-2.5 rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-mono font-medium text-muted">
@@ -187,7 +231,7 @@ export function LandingView() {
 
             <div
               className="grid size-9 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-xs font-bold text-white shadow-sm"
-              title="Arnav (Admin)"
+              title="Admin User"
             >
               AM
             </div>
@@ -215,16 +259,15 @@ export function LandingView() {
             Your Repositories, <span className="gradient-safer">Safer</span> Applications.
           </h1>
           <p className="text-[15px] text-muted max-w-2xl leading-relaxed">
-            Add your MERN projects, let AI agents analyze, verify, and track security — all in one
-            place.
+            Add your MERN projects, let AI agents analyze, verify, and track security — all in one place.
           </p>
         </div>
 
-        {/* 3 PRIMARY ACTION CARDS (images/landing-ui.png) */}
+        {/* 3 PRIMARY ACTION CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* Action 1: Connect GitHub */}
           <div
-            onClick={() => handleSelectProject(DEMO_PROJECTS[0])}
+            onClick={() => setShowGitHubModal(true)}
             className="group relative flex items-center justify-between rounded-2xl border border-border/80 bg-surface/90 p-5 transition-all hover:border-primary/50 hover:bg-surface hover:shadow-lg card-glow cursor-pointer"
           >
             <div className="flex items-center gap-4">
@@ -266,7 +309,7 @@ export function LandingView() {
 
           {/* Action 3: Add from Git URL */}
           <div
-            onClick={() => setShowLocalModal(true)}
+            onClick={() => setShowGitUrlModal(true)}
             className="group relative flex items-center justify-between rounded-2xl border border-border/80 bg-surface/90 p-5 transition-all hover:border-primary/50 hover:bg-surface hover:shadow-lg card-glow cursor-pointer"
           >
             <div className="flex items-center gap-4">
@@ -307,7 +350,7 @@ export function LandingView() {
                   filterType === 'all' ? 'bg-white/20 text-white' : 'bg-surface text-muted',
                 )}
               >
-                {combinedProjects.length}
+                {allProjects.length}
               </span>
             </button>
 
@@ -358,7 +401,7 @@ export function LandingView() {
 
           {/* Search, Sort Dropdown & View Mode */}
           <div className="flex flex-wrap items-center gap-3">
-            {/* Embedded input for mobile / small screen */}
+            {/* Embedded input for mobile */}
             <div className="relative md:hidden w-full">
               <Search className="absolute left-3.5 top-2.5 size-4 text-muted pointer-events-none" />
               <input
@@ -370,7 +413,7 @@ export function LandingView() {
               />
             </div>
 
-            {/* Sort by Dropdown */}
+            {/* Sort Dropdown */}
             <div className="relative">
               <select
                 value={sortBy}
@@ -390,7 +433,7 @@ export function LandingView() {
                 type="button"
                 onClick={() => setViewMode('grid')}
                 className={cn(
-                  'rounded-lg p-1.5 text-muted transition-colors',
+                  'rounded-lg p-1.5 text-muted transition-colors cursor-pointer',
                   viewMode === 'grid' && 'bg-surface text-fg shadow-xs',
                 )}
                 title="Grid view"
@@ -401,7 +444,7 @@ export function LandingView() {
                 type="button"
                 onClick={() => setViewMode('list')}
                 className={cn(
-                  'rounded-lg p-1.5 text-muted transition-colors',
+                  'rounded-lg p-1.5 text-muted transition-colors cursor-pointer',
                   viewMode === 'list' && 'bg-surface text-fg shadow-xs',
                 )}
                 title="List view"
@@ -412,214 +455,194 @@ export function LandingView() {
           </div>
         </div>
 
-        {/* 6 PROJECT CARDS GRID (matching images/landing-ui.png) */}
-        <div
-          className={cn(
-            viewMode === 'grid'
-              ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5'
-              : 'space-y-3',
-          )}
-        >
-          {filteredProjects.map((project) => {
-            const isStarred = Boolean(starredIds[project.projectId]);
-            const isTargetVuln = project.name === 'vulnerable-mern-app';
-
-            return (
-              <div
-                key={project.projectId}
-                onClick={() => handleSelectProject(project)}
-                className={cn(
-                  'group relative flex flex-col justify-between rounded-2xl border bg-surface/90 p-5 transition-all hover:shadow-xl cursor-pointer',
-                  isTargetVuln
-                    ? 'border-primary/40 bg-gradient-to-b from-surface via-surface to-primary/5 shadow-md shadow-primary/10'
-                    : 'border-border/80 hover:border-border hover:bg-surface',
-                )}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {/* 3. PROJECT CARDS OR CLEAN EMPTY STATE                               */}
+        {/* ─────────────────────────────────────────────────────────────────── */}
+        {filteredProjects.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border/90 bg-surface-alt/20 p-12 text-center space-y-4">
+            <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-primary/10 text-primary border border-primary/20">
+              <FolderPlus className="size-8" />
+            </div>
+            <div className="max-w-md mx-auto space-y-1.5">
+              <h3 className="text-lg font-bold text-fg">No Repositories Added Yet</h3>
+              <p className="text-xs text-muted leading-relaxed">
+                Sentinel-X is ready. Add a local MERN application folder, connect your GitHub account, or clone
+                from a Git URL to begin automated AST indexing and vulnerability analysis.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowLocalModal(true)}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-primary/90 transition-all cursor-pointer"
               >
-                <div>
-                  {/* Top: Icon, Titles, Star */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="grid size-10 place-items-center rounded-xl bg-surface-alt border border-border/60 text-fg">
-                        {project.type === 'github' ? (
-                          <Github className="size-5" />
-                        ) : (
-                          <Folder className="size-5 text-primary" />
+                <Folder className="size-3.5" />
+                <span>Add Local Repository</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowGitUrlModal(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2 text-xs font-semibold text-fg hover:bg-surface-alt transition-all cursor-pointer"
+              >
+                <LinkIcon className="size-3.5" />
+                <span>Add from Git URL</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              viewMode === 'grid'
+                ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5'
+                : 'space-y-3',
+            )}
+          >
+            {filteredProjects.map((project) => {
+              const isStarred = Boolean(starredIds[project.projectId]);
+              const findingsCount = project.findingsCount ?? 0;
+              const hasBeenRun = Boolean(project.hasBeenRun);
+
+              return (
+                <div
+                  key={project.projectId}
+                  onClick={() => handleSelectProject(project)}
+                  className="group relative flex flex-col justify-between rounded-2xl border border-border/80 bg-surface/90 p-5 transition-all hover:border-primary/50 hover:shadow-xl hover:bg-surface cursor-pointer"
+                >
+                  <div>
+                    {/* Top: Icon, Titles, Star */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="grid size-10 place-items-center rounded-xl bg-surface-alt border border-border/60 text-fg shrink-0">
+                          {project.type === 'github' ? (
+                            <Github className="size-5" />
+                          ) : (
+                            <Folder className="size-5 text-primary" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-bold text-fg text-[15px] group-hover:text-primary transition-colors truncate">
+                            {project.name}
+                          </h3>
+                          <p className="font-mono text-[11px] text-muted truncate">{project.path}</p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => toggleStar(project.projectId, e)}
+                        className={cn(
+                          'p-1 text-muted hover:text-amber-400 transition-colors shrink-0 cursor-pointer',
+                          isStarred && 'text-amber-400 fill-amber-400',
                         )}
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-fg text-[15px] group-hover:text-primary transition-colors">
-                          {project.name}
-                        </h3>
-                        <p className="font-mono text-[11px] text-muted">{project.path}</p>
-                      </div>
+                        title={isStarred ? 'Unstar' : 'Star'}
+                      >
+                        <Star className={cn('size-4.5', isStarred && 'fill-current')} />
+                      </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => toggleStar(project.projectId, e)}
-                      className={cn(
-                        'p-1 text-muted hover:text-amber-400 transition-colors shrink-0',
-                        isStarred && 'text-amber-400 fill-amber-400',
-                      )}
-                      title={isStarred ? 'Unstar' : 'Star'}
-                    >
-                      <Star className={cn('size-4.5', isStarred && 'fill-current')} />
-                    </button>
-                  </div>
+                    {/* Description */}
+                    <p className="mt-3 text-[12.5px] leading-relaxed text-muted line-clamp-2">
+                      {project.description || 'MERN repository indexed by Sentinel-X agentic security engine.'}
+                    </p>
 
-                  {/* Description */}
-                  <p className="mt-3 text-[12.5px] leading-relaxed text-muted line-clamp-2">
-                    {project.description}
-                  </p>
-
-                  {/* Technology Pills */}
-                  <div className="mt-4 flex flex-wrap gap-1.5">
-                    {project.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-lg bg-surface-alt border border-border/70 px-2 py-0.5 text-[11px] font-mono text-fg/80"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Footer: Status, Analyzed Ago, Open Button */}
-                <div className="mt-5 border-t border-border/60 pt-4 space-y-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[11.5px] text-muted">{project.analyzedAgo}</span>
-
-                    {/* Findings Pill */}
-                    {project.findingsCount > 0 ? (
-                      <div className="flex items-center gap-1.5 text-danger font-medium text-[11.5px]">
-                        <ShieldAlert className="size-3.5" />
-                        <span>
-                          {project.findingsCount} findings
-                          {project.criticalCount > 0 && ` · ${project.criticalCount} critical`}
-                          {project.highCount > 0 && ` · ${project.highCount} high`}
+                    {/* Technology Pills */}
+                    <div className="mt-4 flex flex-wrap gap-1.5">
+                      {(project.tags || ['Express', 'Node.js', 'MongoDB']).map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-lg bg-surface-alt border border-border/70 px-2 py-0.5 text-[11px] font-mono text-fg/80"
+                        >
+                          {tag}
                         </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[11.5px]">
-                        <ShieldCheck className="size-3.5" />
-                        <span>No findings</span>
-                      </div>
-                    )}
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectProject(project)}
-                      className={cn(
-                        'w-full flex items-center justify-center gap-2 rounded-xl py-2 text-xs font-semibold transition-all cursor-pointer shadow-sm',
-                        isTargetVuln
-                          ? 'bg-primary hover:bg-primary/90 text-white'
-                          : 'border border-border/90 bg-surface-alt/70 text-fg hover:bg-primary hover:text-white hover:border-transparent',
-                      )}
-                    >
-                      <span>Open Project</span>
-                      <ArrowRight className="size-3.5" />
-                    </button>
+                  {/* Footer: Status, Analyzed Ago, Open Button */}
+                  <div className="mt-5 border-t border-border/60 pt-4 space-y-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[11.5px] text-muted">
+                        {project.analyzedAgo || (hasBeenRun ? 'Recently analyzed' : 'Never analyzed')}
+                      </span>
 
-                    <button
-                      type="button"
-                      className="grid size-8 place-items-center rounded-xl border border-border/80 bg-surface-alt/50 text-muted hover:text-fg hover:bg-surface-alt transition-colors shrink-0"
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </button>
+                      {/* Findings Pill */}
+                      {findingsCount > 0 ? (
+                        <div className="flex items-center gap-1.5 text-danger font-medium text-[11.5px]">
+                          <ShieldAlert className="size-3.5" />
+                          <span>
+                            {findingsCount} findings
+                            {(project.criticalCount ?? 0) > 0 && ` · ${project.criticalCount} crit`}
+                            {(project.highCount ?? 0) > 0 && ` · ${project.highCount} high`}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[11.5px]">
+                          <ShieldCheck className="size-3.5" />
+                          <span>No findings</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectProject(project)}
+                        className="w-full flex items-center justify-center gap-2 rounded-xl py-2 text-xs font-semibold border border-border/90 bg-surface-alt/70 text-fg hover:bg-primary hover:text-white hover:border-transparent transition-all cursor-pointer shadow-sm"
+                      >
+                        <span>Open Project</span>
+                        <ArrowRight className="size-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        className="grid size-8 place-items-center rounded-xl border border-border/80 bg-surface-alt/50 text-muted hover:text-fg hover:bg-surface-alt transition-colors shrink-0"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </main>
 
       {/* ─────────────────────────────────────────────────────────────────── */}
-      {/* LOCAL REPOSITORY INGESTION MODAL                                    */}
+      {/* 4. MODALS: GITHUB, LOCAL FOLDER, GIT URL & INDEXING PROGRESS        */}
       {/* ─────────────────────────────────────────────────────────────────── */}
-      {showLocalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-border bg-surface p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-border/80 pb-3">
-              <div className="flex items-center gap-2.5">
-                <Folder className="size-5 text-primary" />
-                <h3 className="font-bold text-fg text-base">Add Local Target Repository</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowLocalModal(false)}
-                className="text-muted hover:text-fg text-sm"
-              >
-                ✕
-              </button>
-            </div>
+      <GitHubConnectModal
+        isOpen={showGitHubModal}
+        onClose={() => setShowGitHubModal(false)}
+        onImportRepo={handleImportGitHubRepo}
+      />
 
-            <p className="text-xs text-muted leading-relaxed">
-              Specify a local filesystem path or docker mount containing a Node.js/MERN project for
-              AST indexing, taint flow analysis, and exploit verification.
-            </p>
+      <LocalFolderModal
+        isOpen={showLocalModal}
+        onClose={() => setShowLocalModal(false)}
+        onSubmit={handleLoadLocal}
+      />
 
-            <form onSubmit={handleLoadCustomPath} className="space-y-3">
-              <div className="relative">
-                <Terminal className="absolute left-3.5 top-3 size-4 text-primary pointer-events-none" />
-                <input
-                  type="text"
-                  value={localInputPath}
-                  onChange={(e) => setLocalInputPath(e.target.value)}
-                  placeholder="/app/sandbox-target or relative project directory"
-                  className="w-full rounded-xl border border-border bg-surface-alt py-2.5 pl-10 pr-3 font-mono text-xs text-fg placeholder:text-muted/50 focus:border-primary focus:outline-none"
-                />
-              </div>
+      <GitUrlModal
+        isOpen={showGitUrlModal}
+        onClose={() => setShowGitUrlModal(false)}
+        onSubmit={handleCloneGit}
+      />
 
-              {localError && (
-                <p className="text-xs font-mono text-danger bg-danger/10 p-2.5 rounded-lg border border-danger/30">
-                  {localError}
-                </p>
-              )}
-
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={() => setLocalInputPath('packages/engine/test/fixtures/vuln-mern')}
-                  className="text-[11px] font-mono text-primary hover:underline"
-                >
-                  Load Fixture Sample
-                </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowLocalModal(false)}
-                    className="rounded-xl border border-border px-3.5 py-1.5 text-xs text-muted hover:text-fg"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-primary/90 disabled:opacity-50"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="size-3.5 animate-spin" />
-                        <span>Analyzing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="size-3.5 fill-current" />
-                        <span>Index Repository</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <IndexingProgressModal
+        isOpen={indexingModalOpen}
+        isComplete={indexingComplete}
+        projectName={indexingName}
+        projectPath={indexingPath}
+        error={indexingError}
+        stats={indexingStats}
+        project={indexedProject}
+        onOpenProject={(p) => {
+          setIndexingModalOpen(false);
+          handleSelectProject(p);
+        }}
+        onClose={() => setIndexingModalOpen(false)}
+      />
     </div>
   );
 }

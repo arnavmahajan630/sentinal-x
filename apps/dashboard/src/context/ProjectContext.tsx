@@ -1,8 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { fetchProjects, loadLocalProject, triggerAssessment } from '@/lib/api';
+import { fetchProjects, loadLocalProject, cloneGitProject, triggerAssessment } from '@/lib/api';
 import type { Project } from '@/lib/api';
-import { DEMO_PROJECTS } from '@/lib/mockData';
 
 interface ProjectContextType {
   activeProject: Project | null;
@@ -13,9 +12,10 @@ interface ProjectContextType {
   currentRunId: string | null;
   selectProject: (p: Project | null) => void;
   clearProject: () => void;
-  loadProjectFromPath: (path: string) => Promise<any>;
+  loadProjectFromPath: (path: string, name?: string) => Promise<any>;
+  cloneProject: (gitUrl: string, name?: string, branch?: string) => Promise<any>;
   runAnalysis: () => Promise<void>;
-  reloadProjects: () => Promise<void>;
+  reloadProjects: () => Promise<Project[]>;
 }
 
 const ProjectContext = createContext<ProjectContextType>({
@@ -28,8 +28,9 @@ const ProjectContext = createContext<ProjectContextType>({
   selectProject: () => {},
   clearProject: () => {},
   loadProjectFromPath: async () => {},
+  cloneProject: async () => {},
   runAnalysis: async () => {},
-  reloadProjects: async () => {},
+  reloadProjects: async () => [],
 });
 
 export function ProjectProvider({
@@ -39,37 +40,40 @@ export function ProjectProvider({
   children: ReactNode;
   initialProject?: Project | null;
 }) {
-  const [activeProject, setActiveProject] = useState<Project | null>(() => {
-    if (initialProject) return initialProject;
-    try {
-      const savedId = localStorage.getItem('sx-active-project');
-      if (savedId) {
-        const found = DEMO_PROJECTS.find((p) => p.projectId === savedId || p.name === savedId);
-        if (found) return found;
-      }
-    } catch {}
-    return DEMO_PROJECTS[0] || null;
-  });
+  const [activeProject, setActiveProject] = useState<Project | null>(initialProject);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
 
-  const reloadProjects = useCallback(async () => {
+  const reloadProjects = useCallback(async (): Promise<Project[]> => {
     try {
       const raw = await fetchProjects();
       const list = Array.isArray(raw) ? raw : [];
       setAllProjects(list);
-      // Keep active project matched with live backend or demo catalog
+
       setActiveProject((prev) => {
-        const targetId = prev?.projectId || localStorage.getItem('sx-active-project') || 'demo-vuln-mern';
-        const liveMatch = list.find((p) => p.projectId === targetId || p.name === prev?.name);
-        if (liveMatch) return liveMatch;
-        const demoMatch = DEMO_PROJECTS.find((p) => p.projectId === targetId || p.name === prev?.name);
-        return demoMatch || prev || DEMO_PROJECTS[0] || null;
+        // 1. Check URL query param ?projectId=
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlProjectId = urlParams.get('projectId');
+        if (urlProjectId) {
+          const match = list.find((p) => p.projectId === urlProjectId || p.name === urlProjectId);
+          if (match) return match;
+        }
+
+        // 2. Check previous or saved ID
+        const targetId = prev?.projectId || localStorage.getItem('sx-active-project');
+        if (targetId) {
+          const match = list.find((p) => p.projectId === targetId || p.name === targetId || p.name === prev?.name);
+          if (match) return match;
+        }
+
+        // 3. Fallback: return null if empty, or first project if active is required
+        return list[0] || null;
       });
+      return list;
     } catch {
-      // Ignore if server unreachable
+      return [];
     } finally {
       setIsLoading(false);
     }
@@ -92,10 +96,24 @@ export function ProjectProvider({
     selectProject(null);
   };
 
-  const loadProjectFromPath = async (repoPath: string) => {
+  const loadProjectFromPath = async (repoPath: string, name?: string) => {
     setIsLoading(true);
     try {
-      const res = await loadLocalProject(repoPath);
+      const res = await loadLocalProject(repoPath, name);
+      await reloadProjects();
+      if (res.project) {
+        selectProject(res.project);
+      }
+      return res;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const cloneProject = async (gitUrl: string, name?: string, branch?: string) => {
+    setIsLoading(true);
+    try {
+      const res = await cloneGitProject(gitUrl, name, branch);
       await reloadProjects();
       if (res.project) {
         selectProject(res.project);
@@ -116,7 +134,6 @@ export function ProjectProvider({
     } catch (err) {
       console.error('Failed to trigger analysis:', err);
     } finally {
-      // Keep analyzing indicator briefly until SSE picks up
       setTimeout(() => setIsAnalyzing(false), 2000);
     }
   };
@@ -133,6 +150,7 @@ export function ProjectProvider({
         selectProject,
         clearProject,
         loadProjectFromPath,
+        cloneProject,
         runAnalysis,
         reloadProjects,
       }}

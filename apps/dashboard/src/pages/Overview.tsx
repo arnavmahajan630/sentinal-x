@@ -62,55 +62,48 @@ export function Overview() {
     );
   }
 
-  const rawPosture = data?.posture;
-  const posture = {
-    grade: rawPosture?.grade || 'D+',
-    score: rawPosture?.score ?? 35,
-    statusText: rawPosture?.statusText || 'At Risk',
-    protectedRoutes: rawPosture?.protectedRoutes || 14,
-    totalRoutes: rawPosture?.totalRoutes || 32,
-  };
-
   const rawFindings = data?.findings;
   const findings = {
-    total: (rawFindings?.total && rawFindings.total > 0) ? rawFindings.total : 97,
-    critical: rawFindings?.critical ?? 7,
-    high: rawFindings?.high ?? 18,
-    medium: rawFindings?.medium ?? 24,
-    low: rawFindings?.low ?? 12,
-    info: rawFindings?.info ?? 36,
+    total: rawFindings?.total ?? 0,
+    critical: rawFindings?.critical ?? 0,
+    high: rawFindings?.high ?? 0,
+    medium: rawFindings?.medium ?? 0,
+    low: rawFindings?.low ?? 0,
+    info: rawFindings?.info ?? 0,
   };
 
-  const defaultTopFindings = [
-    { id: 'F-0012', type: 'IDOR', severity: 'critical', status: 'confirmed' },
-    { id: 'F-0013', type: 'NoSQL Injection', severity: 'high', status: 'confirmed' },
-    { id: 'F-0014', type: 'Hardcoded Secret', severity: 'high', status: 'confirmed' },
-    { id: 'F-0015', type: 'Missing Auth', severity: 'high', status: 'review' },
-  ];
+  const rawPosture = data?.posture;
+  const hasFindings = findings.total > 0;
+  const posture = {
+    grade: rawPosture?.grade ?? (hasFindings ? 'D+' : 'A'),
+    score: rawPosture?.score ?? (hasFindings ? 35 : 100),
+    statusText: rawPosture?.statusText ?? (hasFindings ? 'At Risk' : 'Healthy'),
+    protectedRoutes: rawPosture?.protectedRoutes || 0,
+    totalRoutes: rawPosture?.totalRoutes || activeProject.stats?.routes || 0,
+  };
 
-  const topFindingsList = (data?.topFindings && data.topFindings.length > 0)
-    ? data.topFindings
-    : defaultTopFindings;
+  const topFindingsList = data?.topFindings && data.topFindings.length > 0 ? data.topFindings : [];
 
-  const defaultEvents = [
-    { ts: new Date(Date.now() - 2 * 60 * 1000).toISOString(), summary: 'Sandbox exploit verified IDOR on /api/orders/:id', kind: 'verification' },
-    { ts: new Date(Date.now() - 5 * 60 * 1000).toISOString(), summary: 'Auth Agent surfaced authorization gap on GET /api/orders/:id', kind: 'agent' },
-    { ts: new Date(Date.now() - 12 * 60 * 1000).toISOString(), summary: 'Mongo Agent flagged $ne injection in auth.controller.js', kind: 'agent' },
-    { ts: new Date(Date.now() - 25 * 60 * 1000).toISOString(), summary: 'FactEngine extracted 32 routes and 127 AST nodes', kind: 'engine' },
-  ];
-
-  // Combine live stream events with recent persisted events or defaults
+  // Combine live stream events with recent persisted events
   const timelineEvents = [
     ...liveEvents.map((e) => ({
       ts: e.ts || new Date().toISOString(),
       summary: e.summary || e.kind || 'Security event',
       kind: e.kind || 'event',
     })),
-    ...((data?.recentEvents && data.recentEvents.length > 0) ? data.recentEvents.map((e: any) => ({
-      ts: e.ts,
-      summary: e.summary,
-      kind: e.type,
-    })) : defaultEvents),
+    ...((data?.recentEvents && data.recentEvents.length > 0)
+      ? data.recentEvents.map((e: any) => ({
+          ts: e.ts,
+          summary: e.summary,
+          kind: e.type,
+        }))
+      : [
+          {
+            ts: activeProject.indexedAt || new Date().toISOString(),
+            summary: `Project ${activeProject.name} indexed into Sentinel-X`,
+            kind: 'engine',
+          },
+        ]),
   ].slice(0, 7);
 
   return (

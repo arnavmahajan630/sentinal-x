@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import fs from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { Config } from '@sentinelx/engine';
 import {
   models,
@@ -19,6 +22,40 @@ import {
 } from '@sentinelx/engine';
 import { sseManager } from '../sse/events';
 
+const execFileAsync = promisify(execFile);
+
+function detectTags(dirPath: string): string[] {
+  const tags: string[] = [];
+  try {
+    const pkgPath = path.join(dirPath, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      if (deps.express) tags.push('Express');
+      if (deps.react || deps['react-dom']) tags.push('React');
+      if (deps.mongoose || deps.mongodb) tags.push('MongoDB');
+      if (deps.next) tags.push('Next.js');
+      if (deps.typescript) tags.push('TypeScript');
+      else tags.push('Node.js');
+    }
+  } catch {
+    // fallback
+  }
+  return tags.length > 0 ? tags : ['Express', 'Node.js', 'MongoDB'];
+}
+
+function formatAnalyzedAgo(date?: Date | string | null): string {
+  if (!date) return 'Never analyzed';
+  const diffMs = Date.now() - new Date(date).getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `Analyzed ${diffMins} min ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `Analyzed ${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `Analyzed ${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+}
+
 // Map of active project watchers
 const activeWatchers = new Map<string, ProjectWatcher>();
 
@@ -30,32 +67,67 @@ export function createApiRouter(cfg: Config): Router {
   async function resolveTargetProjectId(raw?: string | null): Promise<string> {
     if (!raw || raw === 'undefined' || raw === 'null') {
       const p = await models.projects.findOne({ status: 'indexed' }).sort({ indexedAt: -1 }).lean();
-      return p?.projectId || '4a8462e0dca6';
+      return (p as any)?.projectId || '4a8462e0dca6';
     }
     const exact = await models.projects.findOne({ projectId: raw }).lean();
-    if (exact) return exact.projectId;
+    if (exact) return (exact as any).projectId;
 
     const byName = await models.projects.findOne({ name: raw }).lean();
-    if (byName) return byName.projectId;
+    if (byName) return (byName as any).projectId;
 
     if (raw === 'demo-vuln-mern' || raw === 'vulnerable-mern-app') {
       const sandboxTarget = await models.projects.findOne({ name: 'sandbox-target' }).lean();
-      if (sandboxTarget) return sandboxTarget.projectId;
+      if (sandboxTarget) return (sandboxTarget as any).projectId;
     }
 
     const latest = await models.projects.findOne({ status: 'indexed' }).sort({ indexedAt: -1 }).lean();
-    return latest?.projectId || raw;
+    return (latest as any)?.projectId || raw;
   }
 
   // ──────────────────────────────────────────────────────────────────────────
   // 1. Projects
   // ──────────────────────────────────────────────────────────────────────────
 
-  // List all indexed projects
+  // List all indexed projects with dynamic findings and run statistics
   router.get('/projects', async (_req, res) => {
     try {
       const docs = await models.projects.find().sort({ indexedAt: -1 }).lean();
-      res.json(docs);
+      if (!docs || docs.length === 0) {
+        return res.json([]);
+      }
+
+      const enriched = await Promise.all(
+        docs.map(async (doc: any) => {
+          const findings = await models.findings.find({ projectId: doc.projectId, status: 'open' }).lean();
+          const runsCount = await models.agent_runs.countDocuments({ projectId: doc.projectId });
+          const latestRun = await models.agent_runs.findOne({ projectId: doc.projectId }).sort({ startedAt: -1 }).lean();
+
+          const findingsCount = findings.length;
+          const criticalCount = findings.filter((f: any) => f.severity === 'critical').length;
+          const highCount = findings.filter((f: any) => f.severity === 'high').length;
+          const mediumCount = findings.filter((f: any) => f.severity === 'medium').length;
+          const lowCount = findings.filter((f: any) => f.severity === 'low').length;
+          const hasBeenRun = runsCount > 0 || (doc as any).hasBeenRun === true;
+
+          return {
+            ...doc,
+            findingsCount,
+            criticalCount,
+            highCount,
+            mediumCount,
+            lowCount,
+            hasBeenRun,
+            analyzedAgo: hasBeenRun ? formatAnalyzedAgo((latestRun as any)?.finishedAt || (latestRun as any)?.startedAt || doc.indexedAt) : 'Never analyzed',
+            type: doc.type || (doc.gitUrl ? 'github' : 'local'),
+            description: doc.description || (doc.name === 'vulnerable-mern-app' || doc.name === 'sandbox-target'
+              ? 'Deliberately vulnerable MERN application for security testing and research.'
+              : 'Application repository indexed by Sentinel-X agentic security engine.'),
+            tags: doc.tags && doc.tags.length > 0 ? doc.tags : ['Express', 'React', 'Node.js', 'MongoDB'],
+          };
+        }),
+      );
+
+      res.json(enriched);
     } catch {
       res.json([]);
     }
@@ -70,7 +142,23 @@ export function createApiRouter(cfg: Config): Router {
       if (!doc) {
         return res.status(404).json({ error: 'No project found' });
       }
-      res.json(doc);
+
+      const findings = await models.findings.find({ projectId: targetId, status: 'open' }).lean();
+      const runsCount = await models.agent_runs.countDocuments({ projectId: targetId });
+      const hasBeenRun = runsCount > 0 || (doc as any).hasBeenRun === true;
+
+      res.json({
+        ...doc,
+        findingsCount: findings.length,
+        criticalCount: findings.filter((f: any) => f.severity === 'critical').length,
+        highCount: findings.filter((f: any) => f.severity === 'high').length,
+        mediumCount: findings.filter((f: any) => f.severity === 'medium').length,
+        lowCount: findings.filter((f: any) => f.severity === 'low').length,
+        hasBeenRun,
+        analyzedAgo: hasBeenRun ? formatAnalyzedAgo((doc as any).indexedAt) : 'Never analyzed',
+        type: (doc as any).type || ((doc as any).gitUrl ? 'github' : 'local'),
+        tags: (doc as any).tags || ['Express', 'React', 'Node.js', 'MongoDB'],
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -79,22 +167,190 @@ export function createApiRouter(cfg: Config): Router {
   // Load / index a new or existing local project repository
   router.post('/project/load', async (req, res) => {
     try {
-      const { path: rawPath, force } = req.body;
+      const { path: rawPath, name: customName, force } = req.body;
       if (!rawPath) {
         return res.status(400).json({ error: 'Missing path parameter' });
       }
 
       const resolved = path.resolve(rawPath);
+      if (!fs.existsSync(resolved)) {
+        return res.status(404).json({ error: `Path does not exist: ${resolved}` });
+      }
+      if (!fs.statSync(resolved).isDirectory()) {
+        return res.status(400).json({ error: `Path is not a directory: ${resolved}` });
+      }
+
       const idxResult = await indexProject(resolved, { force: Boolean(force) });
       const graphResult = await buildGraph(idxResult.projectId);
+
+      const projectName = customName?.trim() || (resolved.includes('vuln-mern') || resolved.includes('sandbox-target') ? 'vulnerable-mern-app' : path.basename(resolved));
+      const tags = detectTags(resolved);
+      const description = (projectName === 'vulnerable-mern-app')
+        ? 'Deliberately vulnerable MERN application for security testing and research.'
+        : `Local repository indexed from ${resolved}`;
+
+      await models.projects.updateOne(
+        { projectId: idxResult.projectId },
+        {
+          $set: {
+            name: projectName,
+            type: 'local',
+            description,
+            tags,
+            hasBeenRun: false,
+          },
+        },
+      );
 
       const project = await models.projects.findOne({ projectId: idxResult.projectId }).lean();
       res.json({
         success: true,
-        project,
+        project: {
+          ...project,
+          findingsCount: 0,
+          criticalCount: 0,
+          highCount: 0,
+          mediumCount: 0,
+          lowCount: 0,
+          hasBeenRun: false,
+          analyzedAgo: 'Never analyzed',
+          type: 'local',
+          tags,
+          description,
+        },
         stats: idxResult.stats,
         graph: { nodes: graphResult.nodes, edges: graphResult.edges },
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Clone and index a repository from Git URL
+  router.post('/project/clone', async (req, res) => {
+    try {
+      const { gitUrl, name: customName, branch } = req.body;
+      if (!gitUrl || typeof gitUrl !== 'string') {
+        return res.status(400).json({ error: 'Missing or invalid gitUrl parameter' });
+      }
+
+      const cloneBase = path.resolve(process.cwd(), 'cloned_repos');
+      if (!fs.existsSync(cloneBase)) {
+        fs.mkdirSync(cloneBase, { recursive: true });
+      }
+
+      const rawRepoName = path.basename(gitUrl.trim(), '.git').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const uniqueSuffix = Date.now().toString(36);
+      const targetDir = path.join(cloneBase, `${rawRepoName}_${uniqueSuffix}`);
+
+      const args = ['clone', '--depth', '1'];
+      if (branch) {
+        args.push('--branch', branch);
+      }
+      args.push(gitUrl.trim(), targetDir);
+
+      await execFileAsync('git', args, { timeout: 60000 });
+
+      const idxResult = await indexProject(targetDir);
+      const graphResult = await buildGraph(idxResult.projectId);
+
+      const projectName = customName?.trim() || path.basename(gitUrl.trim(), '.git');
+      const tags = detectTags(targetDir);
+      if (!tags.includes('Git')) tags.unshift('Git');
+
+      await models.projects.updateOne(
+        { projectId: idxResult.projectId },
+        {
+          $set: {
+            name: projectName,
+            type: 'github',
+            gitUrl: gitUrl.trim(),
+            gitBranch: branch || 'main',
+            description: `Cloned from ${gitUrl.trim()}`,
+            tags,
+            hasBeenRun: false,
+          },
+        },
+      );
+
+      const project = await models.projects.findOne({ projectId: idxResult.projectId }).lean();
+      res.json({
+        success: true,
+        project: {
+          ...project,
+          findingsCount: 0,
+          criticalCount: 0,
+          highCount: 0,
+          mediumCount: 0,
+          lowCount: 0,
+          hasBeenRun: false,
+          analyzedAgo: 'Never analyzed',
+          type: 'github',
+          tags,
+          description: `Cloned from ${gitUrl.trim()}`,
+        },
+        stats: idxResult.stats,
+        graph: { nodes: graphResult.nodes, edges: graphResult.edges },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Browse local server filesystem directories
+  router.get('/fs/browse', async (req, res) => {
+    try {
+      const rawDir = req.query.dir as string | undefined;
+      const targetDir = rawDir ? path.resolve(rawDir) : process.cwd();
+
+      if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
+        return res.status(404).json({ error: 'Directory not found' });
+      }
+
+      const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+      const directories = entries
+        .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+        .map((e) => {
+          const fullPath = path.join(targetDir, e.name);
+          return {
+            name: e.name,
+            path: fullPath,
+            hasPackageJson: fs.existsSync(path.join(fullPath, 'package.json')),
+            isGit: fs.existsSync(path.join(fullPath, '.git')),
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const parent = path.dirname(targetDir);
+      res.json({
+        current: targetDir,
+        parent: parent !== targetDir ? parent : null,
+        directories,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Reset database back to fresh blank state (0 projects)
+  router.post('/projects/reset', async (_req, res) => {
+    try {
+      await Promise.all([
+        models.projects.deleteMany({}),
+        models.files.deleteMany({}),
+        models.graph_nodes.deleteMany({}),
+        models.graph_edges.deleteMany({}),
+        models.findings.deleteMany({}),
+        models.agent_runs.deleteMany({}),
+        models.agent_steps.deleteMany({}),
+        models.tool_calls.deleteMany({}),
+        models.observations.deleteMany({}),
+        models.hypotheses.deleteMany({}),
+        models.verification_runs.deleteMany({}),
+        models.security_events.deleteMany({}),
+        models.change_sets.deleteMany({}),
+      ]);
+      res.json({ success: true, message: 'All projects and analysis data reset to fresh state' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

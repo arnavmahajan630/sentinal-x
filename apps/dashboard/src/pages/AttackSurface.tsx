@@ -50,40 +50,31 @@ export function AttackSurface() {
   // Queries
   const { data: routesData } = useQuery({
     queryKey: ['routes', activeProject?.projectId],
-    queryFn: () => (activeProject ? fetchRoutes(activeProject.projectId) : null),
-    enabled: Boolean(activeProject),
+    queryFn: () => fetchRoutes(activeProject?.projectId),
   });
 
   const { data: findingsData } = useQuery({
     queryKey: ['findings', activeProject?.projectId],
-    queryFn: () => (activeProject ? fetchFindings(activeProject.projectId) : null),
-    enabled: Boolean(activeProject),
+    queryFn: () => fetchFindings(activeProject?.projectId),
   });
 
   const routes = useMemo<RouteItem[]>(() => {
     const raw = routesData?.routes;
-    const live: RouteItem[] = Array.isArray(raw)
+    return Array.isArray(raw)
       ? raw
       : Array.isArray((raw as any)?.items)
       ? (raw as any).items
       : [];
-    if (live.length >= 10) return live;
-    const merged = [...live];
-    for (const dr of DEMO_ROUTES) {
-      if (!merged.some((r) => r.id === dr.id || (r.method === dr.method && r.path === dr.path))) {
-        merged.push(dr);
-      }
-    }
-    return merged;
   }, [routesData]);
 
   const findings = useMemo<Finding[]>(() => {
-    if (Array.isArray(findingsData) && findingsData.length > 0) return findingsData;
-    return DEMO_FINDINGS;
+    if (Array.isArray(findingsData)) return findingsData;
+    return [];
   }, [findingsData]);
 
-  const selectedRoute = useMemo<RouteItem>(() => {
-    return (routes.find((r) => r.id === selectedRouteId) || routes[0] || DEMO_ROUTES[0]) as RouteItem;
+  const selectedRoute = useMemo<RouteItem | null>(() => {
+    if (routes.length === 0) return null;
+    return (routes.find((r) => r.id === selectedRouteId) || routes[0]) as RouteItem;
   }, [routes, selectedRouteId]);
 
   const handleCopy = (text: string) => {
@@ -161,58 +152,58 @@ export function AttackSurface() {
       {/* 2. FIVE METRIC CARDS (images/attack-surface.png)                    */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {/* Card 1: 32 API Routes */}
+        {/* Card 1: API Routes */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-primary/10 text-primary border border-primary/20 shrink-0">
             <GitBranch className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">32</div>
+            <div className="text-2xl font-extrabold text-fg">{routes.length}</div>
             <div className="text-xs text-muted font-medium">API Routes</div>
           </div>
         </div>
 
-        {/* Card 2: 14 Protected */}
+        {/* Card 2: Protected */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
             <ShieldCheck className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">14</div>
+            <div className="text-2xl font-extrabold text-fg">{routes.filter((r) => r.protected).length}</div>
             <div className="text-xs text-muted font-medium">Protected</div>
           </div>
         </div>
 
-        {/* Card 3: 18 Need Review */}
+        {/* Card 3: Need Review */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
             <Shield className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">18</div>
+            <div className="text-2xl font-extrabold text-fg">{routes.filter((r) => !r.protected || r.authEnforcement === 'weak').length}</div>
             <div className="text-xs text-muted font-medium">Need Review</div>
           </div>
         </div>
 
-        {/* Card 4: 9 Sensitive Data Flows */}
+        {/* Card 4: Sensitive Data Flows */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 shrink-0">
             <Database className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">9</div>
+            <div className="text-2xl font-extrabold text-fg">{routesData?.assetsCount ?? routes.filter((r) => r.mutates || (r.inputs && r.inputs.length > 0)).length}</div>
             <div className="text-xs text-muted font-medium">Sensitive Data Flows</div>
           </div>
         </div>
 
-        {/* Card 5: 3 External Services */}
+        {/* Card 5: Active Findings */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
             <Globe className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">3</div>
-            <div className="text-xs text-muted font-medium">External Services</div>
+            <div className="text-2xl font-extrabold text-fg">{findings.length}</div>
+            <div className="text-xs text-muted font-medium">Active Findings</div>
           </div>
         </div>
       </div>
@@ -474,8 +465,21 @@ export function AttackSurface() {
 
         {/* ── COL 2: Center Route Flow & Signals (5.5 cols) ── */}
         <div className="lg:col-span-5 space-y-4">
-          {/* Main Inspection Card */}
-          <div className="rounded-2xl border border-border/80 bg-surface/90 p-5 shadow-xs space-y-5">
+          {!selectedRoute ? (
+            <div className="rounded-2xl border border-border/80 bg-surface/90 p-12 shadow-xs text-center flex flex-col items-center justify-center min-h-[360px]">
+              <div className="grid size-12 place-items-center rounded-2xl bg-surface-alt border border-border text-muted mb-3">
+                <GitBranch className="size-6" />
+              </div>
+              <h3 className="text-base font-bold text-fg">No route selected</h3>
+              <p className="text-xs text-muted mt-1 max-w-xs">
+                {routes.length === 0
+                  ? 'No routes have been detected yet for this project. Once indexed, exposed endpoints will appear here.'
+                  : 'Select an endpoint from the left column to inspect its security flow and data paths.'}
+              </p>
+            </div>
+          ) : (
+            /* Main Inspection Card */
+            <div className="rounded-2xl border border-border/80 bg-surface/90 p-5 shadow-xs space-y-5">
             {/* Header: Method + Path + Badges */}
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -742,6 +746,7 @@ export function AttackSurface() {
               </div>
             </div>
           </div>
+          )}
 
           {/* COVERAGE & HOTSPOTS CARD */}
           <div className="rounded-2xl border border-border/80 bg-surface/90 p-5 shadow-xs space-y-4">

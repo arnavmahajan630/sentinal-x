@@ -51,9 +51,19 @@ export function Verification() {
   });
 
   const runs = useMemo<VerificationRun[]>(() => {
-    if (Array.isArray(runsData) && runsData.length > 0) return runsData;
-    return DEMO_VERIFICATIONS;
+    if (Array.isArray(runsData)) return runsData;
+    return [];
   }, [runsData]);
+
+  const runCounts = useMemo(() => {
+    return {
+      total: runs.length,
+      confirmed: runs.filter((r: any) => r.status?.toLowerCase() === 'confirmed' || r.result === 'CONFIRMED').length,
+      rejected: runs.filter((r: any) => r.status?.toLowerCase() === 'rejected' || r.result === 'REJECTED').length,
+      inProgress: runs.filter((r: any) => r.status?.toLowerCase() === 'in-progress' || r.status?.toLowerCase() === 'running').length,
+      skipped: runs.filter((r: any) => r.status?.toLowerCase() === 'skipped').length,
+    };
+  }, [runs]);
 
   const handleCopy = (type: 'terminal' | 'req' | 'res') => {
     if (type === 'terminal') {
@@ -89,57 +99,57 @@ export function Verification() {
       {/* 2. FIVE METRIC CARDS (images/verifcaiton.png)                        */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {/* Card 1: 12 Verification Runs */}
+        {/* Card 1: Verification Runs */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
             <FlaskConical className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">12</div>
+            <div className="text-2xl font-extrabold text-fg">{runCounts.total}</div>
             <div className="text-xs text-muted font-medium">Verification Runs</div>
           </div>
         </div>
 
-        {/* Card 2: 8 Confirmed */}
+        {/* Card 2: Confirmed */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
             <CheckCircle2 className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">8</div>
+            <div className="text-2xl font-extrabold text-fg">{runCounts.confirmed}</div>
             <div className="text-xs text-muted font-medium">Confirmed</div>
           </div>
         </div>
 
-        {/* Card 3: 2 Not Reproducible */}
+        {/* Card 3: Not Reproducible */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-danger/10 text-danger border border-danger/20 shrink-0">
             <XCircle className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">2</div>
+            <div className="text-2xl font-extrabold text-fg">{runCounts.rejected}</div>
             <div className="text-xs text-muted font-medium">Not Reproducible</div>
           </div>
         </div>
 
-        {/* Card 4: 1 In Progress */}
+        {/* Card 4: In Progress */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
             <Clock className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">1</div>
+            <div className="text-2xl font-extrabold text-fg">{runCounts.inProgress}</div>
             <div className="text-xs text-muted font-medium">In Progress</div>
           </div>
         </div>
 
-        {/* Card 5: 1 Skipped */}
+        {/* Card 5: Skipped */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-surface-alt text-muted border border-border shrink-0">
             <Shield className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">1</div>
+            <div className="text-2xl font-extrabold text-fg">{runCounts.skipped}</div>
             <div className="text-xs text-muted font-medium">Skipped</div>
           </div>
         </div>
@@ -224,7 +234,20 @@ export function Verification() {
       {/* ─────────────────────────────────────────────────────────────────── */}
       {/* 4. THREE-COLUMN MAIN WORKBENCH (images/verifcaiton.png)             */}
       {/* ─────────────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      {runs.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border/80 bg-surface/40 p-16 text-center flex flex-col items-center justify-center">
+          <div className="grid size-14 place-items-center rounded-2xl bg-surface-alt border border-border text-muted mb-4">
+            <FlaskConical className="size-7 text-muted/60" />
+          </div>
+          <h3 className="text-base font-bold text-fg">No verification runs yet</h3>
+          <p className="text-xs text-muted max-w-sm mt-2 leading-relaxed">
+            {activeProject?.hasBeenRun
+              ? 'No dynamic verification runs recorded for this project.'
+              : 'This project has not been verified in the sandbox. Run a verification agent to validate vulnerabilities.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* ── COL 1: Verification Runs List (3.5 cols) ── */}
         <div className="lg:col-span-3 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-border/60">
@@ -772,7 +795,8 @@ export function Verification() {
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

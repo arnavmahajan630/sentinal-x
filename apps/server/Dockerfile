@@ -11,6 +11,7 @@ COPY apps/server apps/server
 RUN npm run build -w @sentinelx/server
 
 FROM node:22-alpine AS runtime
+RUN apk add --no-cache git
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json ./
