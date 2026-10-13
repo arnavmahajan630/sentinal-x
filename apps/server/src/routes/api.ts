@@ -769,9 +769,25 @@ export function createApiRouter(cfg: Config): Router {
       const { projectId: rawId, mode, agent } = req.body;
       const projectId = await resolveTargetProjectId(rawId);
 
+      const agentMap: Record<string, 'auth' | 'dataflow' | 'attack-path'> = {
+        auth: 'auth',
+        bola: 'auth',
+        idor: 'auth',
+        bfla: 'auth',
+        dataflow: 'dataflow',
+        injection: 'dataflow',
+        mass_assignment: 'dataflow',
+        discovery: 'auth',
+        'attack-path': 'attack-path',
+        attack_path: 'attack-path',
+      };
+
+      const resolvedAgent = agent ? agentMap[String(agent).toLowerCase()] || 'auth' : undefined;
+      const targetMode = resolvedAgent ? 'agent' : (mode || 'full');
+
       // Run assessment asynchronously so client can stream SSE live
-      if (mode === 'agent' && agent) {
-        runAgentOnDemand(projectId, agent).catch((e) =>
+      if (targetMode === 'agent' && resolvedAgent) {
+        runAgentOnDemand(projectId, resolvedAgent).catch((e) =>
           console.error('[assess] agent error:', e),
         );
       } else {
@@ -780,7 +796,13 @@ export function createApiRouter(cfg: Config): Router {
         );
       }
 
-      res.json({ success: true, message: 'Assessment started', projectId });
+      res.json({
+        success: true,
+        message: 'Assessment started',
+        projectId,
+        mode: targetMode,
+        agent: resolvedAgent,
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -793,6 +815,16 @@ export function createApiRouter(cfg: Config): Router {
       const q = projectId ? { projectId } : {};
       const docs = await models.agent_runs.find(q).sort({ startedAt: -1 }).limit(20).lean();
       res.json(docs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  router.get('/runs/:runId/steps', async (req, res) => {
+    try {
+      const { runId } = req.params;
+      const steps = await models.agent_steps.find({ runId }).sort({ seq: 1 }).lean();
+      res.json(steps);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

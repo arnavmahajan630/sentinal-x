@@ -16,12 +16,12 @@ import {
   Zap,
 } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
-import { fetchOverview } from '@/lib/api';
+import { fetchOverview, fetchGraph } from '@/lib/api';
 import { useGlobalEvents } from '@/hooks/useSse';
 import { cn } from '@/lib/utils';
 
 export function Overview() {
-  const { activeProject } = useProject();
+  const { activeProject, isAnalyzing } = useProject();
   const { events: liveEvents } = useGlobalEvents(activeProject?.projectId);
 
   const { data } = useQuery({
@@ -29,6 +29,12 @@ export function Overview() {
     queryFn: () => (activeProject ? fetchOverview(activeProject.projectId) : null),
     enabled: Boolean(activeProject),
     refetchInterval: 6000,
+  });
+
+  const { data: graphData } = useQuery({
+    queryKey: ['graph', activeProject?.projectId],
+    queryFn: () => (activeProject ? fetchGraph(activeProject.projectId) : null),
+    enabled: Boolean(activeProject),
   });
 
   if (!activeProject) {
@@ -105,6 +111,37 @@ export function Overview() {
           },
         ]),
   ].slice(0, 7);
+
+  // Dynamic mini-graph derivation
+  const topFinding = topFindingsList[0];
+  const routeNodes = graphData?.nodes?.filter((n) => n.type?.toLowerCase() === 'route') || [];
+  const modelNodes = graphData?.nodes?.filter((n) => n.type?.toLowerCase() === 'model') || [];
+
+  const matchedRouteNode = topFinding
+    ? routeNodes.find((r) => topFinding.affectedNodes?.includes(r.id) || topFinding.affectedNodes?.includes(r.key))
+    : routeNodes[0];
+
+  const routePath = matchedRouteNode
+    ? (matchedRouteNode.props?.path || matchedRouteNode.key?.replace('Route:', '') || matchedRouteNode.id?.replace('Route:', ''))
+    : '/api/orders/:id';
+
+  const isRouteVulnerable = Boolean(topFinding);
+  const routeStatusLabel = isRouteVulnerable && topFinding?.severity
+    ? `${topFinding.severity.toUpperCase()} Finding`
+    : matchedRouteNode?.props?.protected
+    ? 'Protected'
+    : 'Unprotected';
+
+  const controllerNode = graphData?.nodes?.find((n) => n.type?.toLowerCase() === 'function');
+  const controllerLabel = controllerNode
+    ? (controllerNode.props?.name ? `${controllerNode.props.name}()` : controllerNode.key?.split('#')[1] || controllerNode.key?.split('/').pop() || 'handler()')
+    : 'getOrderById()';
+
+  const targetAsset = topFinding?.affectedNodes?.find((n) => n.startsWith('Asset:'))?.replace('Asset:', '');
+  const modelLabel = targetAsset || (modelNodes[0]?.props?.model || modelNodes[0]?.key?.replace('Model:', '') || 'Order');
+  const modelCategory = targetAsset ? 'Sensitive Asset' : 'MongoDB';
+
+  const isLiveActive = Boolean(isAnalyzing || (activeProject as any)?.activeRunId);
 
   return (
     <div className="space-y-6">
@@ -267,34 +304,51 @@ export function Overview() {
               <div className="text-muted/60 text-xs">──▶</div>
 
               {/* Route Node */}
-              <div className="flex flex-col items-center">
-                <div className="grid size-11 place-items-center rounded-xl border-2 border-danger bg-danger/10 text-danger shadow-lg shadow-danger/10">
+              <div className="flex flex-col items-center max-w-[130px] text-center">
+                <div className={cn(
+                  'grid size-11 place-items-center rounded-xl border-2 shadow-lg',
+                  isRouteVulnerable
+                    ? 'border-danger bg-danger/10 text-danger shadow-danger/10'
+                    : 'border-primary bg-primary/10 text-primary shadow-primary/10',
+                )}>
                   <ShieldAlert className="size-5" />
                 </div>
-                <span className="mt-1 text-[11px] font-mono text-danger font-bold">/orders/:id</span>
-                <span className="text-[9.5px] text-muted">Unprotected</span>
+                <span className={cn(
+                  'mt-1 text-[11px] font-mono font-bold truncate max-w-[120px]',
+                  isRouteVulnerable ? 'text-danger' : 'text-fg',
+                )} title={routePath}>
+                  {routePath}
+                </span>
+                <span className="text-[9.5px] text-muted">{routeStatusLabel}</span>
               </div>
 
               <div className="text-muted/60 text-xs">──▶</div>
 
               {/* Controller Node */}
-              <div className="flex flex-col items-center">
+              <div className="flex flex-col items-center max-w-[130px] text-center">
                 <div className="grid size-11 place-items-center rounded-xl border-2 border-info bg-info/10 text-info">
                   <Terminal className="size-5" />
                 </div>
-                <span className="mt-1 text-[11px] font-mono text-fg">getOrderById()</span>
+                <span className="mt-1 text-[11px] font-mono text-fg truncate max-w-[120px]" title={controllerLabel}>
+                  {controllerLabel}
+                </span>
                 <span className="text-[9.5px] text-muted">Controller</span>
               </div>
 
               <div className="text-muted/60 text-xs">──▶</div>
 
-              {/* Database Node */}
-              <div className="flex flex-col items-center">
-                <div className="grid size-11 place-items-center rounded-xl border-2 border-success bg-success/10 text-success">
+              {/* Database / Asset Node */}
+              <div className="flex flex-col items-center max-w-[130px] text-center">
+                <div className={cn(
+                  'grid size-11 place-items-center rounded-xl border-2',
+                  targetAsset ? 'border-amber-500 bg-amber-500/10 text-amber-400' : 'border-success bg-success/10 text-success',
+                )}>
                   <Database className="size-5" />
                 </div>
-                <span className="mt-1 text-[11px] font-semibold text-fg">MongoDB</span>
-                <span className="text-[9.5px] text-muted">Order</span>
+                <span className="mt-1 text-[11px] font-semibold text-fg truncate max-w-[120px]" title={modelLabel}>
+                  {modelLabel}
+                </span>
+                <span className="text-[9.5px] text-muted">{modelCategory}</span>
               </div>
             </div>
 
@@ -315,10 +369,17 @@ export function Overview() {
               <Zap className="size-4 text-primary" />
               <h2 className="text-[15px] font-bold text-fg">Live Activity</h2>
             </div>
-            <span className="flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-[10.5px] font-semibold text-success">
-              <span className="size-1.5 rounded-full bg-success animate-ping" />
-              Live
-            </span>
+            {isLiveActive ? (
+              <span className="flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-[10.5px] font-semibold text-success">
+                <span className="size-1.5 rounded-full bg-success animate-ping" />
+                Active
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 rounded-full bg-surface-alt border border-border/80 px-2.5 py-0.5 text-[10.5px] font-semibold text-muted">
+                <span className="size-1.5 rounded-full bg-muted-foreground/40" />
+                Indexed
+              </span>
+            )}
           </div>
 
           <div className="mt-3 flex-1 space-y-3 overflow-y-auto max-h-[220px] pr-1">

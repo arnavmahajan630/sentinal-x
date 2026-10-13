@@ -48,7 +48,7 @@ export function buildAgentGraph(o: RunnerOptions, checkpointer?: BaseCheckpointS
   const startedAt = o.startedAt ?? Date.now();
   const llmTools = toLlmToolList(tools);
   const usage: RunUsage = { inTok: 0, outTok: 0, llmCalls: 0, toolCalls: 0 };
-  const delays = o.retryDelaysMs ?? [1000, 3000];
+  const delays = o.retryDelaysMs ?? [2000, 5000, 10000];
 
   const stopReason = (state: S): Terminal | null => {
     if (o.signal?.aborted) return { status: 'cancelled', reason: 'cancelled' };

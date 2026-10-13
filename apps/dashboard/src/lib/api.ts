@@ -83,6 +83,8 @@ export interface RouteItem {
   inputs?: string[];
   middlewareChain?: string[];
   line?: number;
+  models?: string[];
+  exposesSensitive?: string[];
 }
 
 export interface GraphNode {
@@ -367,6 +369,12 @@ export async function triggerAssessment(projectId: string, mode = 'full', agent?
 export async function fetchRuns(projectId: string): Promise<any[]> {
   const res = await fetch(`${API_BASE}/api/runs?projectId=${encodeURIComponent(projectId)}`);
   if (!res.ok) throw new Error('Failed to fetch runs');
+  return res.json();
+}
+
+export async function fetchRunSteps(runId: string): Promise<AgentStep[]> {
+  const res = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}/steps`);
+  if (!res.ok) throw new Error('Failed to fetch run steps');
   return res.json();
 }
 

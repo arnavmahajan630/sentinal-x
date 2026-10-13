@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   XCircle,
   Check,
+  FlaskConical,
 } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
 import { fetchRoutes, fetchFindings } from '@/lib/api';
@@ -82,6 +83,50 @@ export function AttackSurface() {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const matchingRouteFindings = useMemo(() => {
+    if (!selectedRoute) return [];
+    return findings.filter((f) =>
+      f.affectedNodes?.some((n) => n.includes(selectedRoute.id) || n.includes(selectedRoute.path)),
+    );
+  }, [findings, selectedRoute]);
+
+  const topRouteFinding = matchingRouteFindings[0] || null;
+
+  const routeGap = useMemo(() => {
+    if (!selectedRoute || !routesData?.gaps) return null;
+    return routesData.gaps.find((g: any) =>
+      g.route?.id === selectedRoute.id || g.route?.path === selectedRoute.path,
+    );
+  }, [selectedRoute, routesData?.gaps]);
+
+  const routeInputs = useMemo(() => {
+    if (!selectedRoute) return 'None';
+    if (selectedRoute.inputs && selectedRoute.inputs.length > 0) {
+      return selectedRoute.inputs.join(', ');
+    }
+    if (selectedRoute.path.includes(':')) {
+      const match = selectedRoute.path.match(/:([a-zA-Z0-9_]+)/g);
+      if (match) return match.map((m) => `req.params.${m.slice(1)}`).join(', ');
+    }
+    if (selectedRoute.method === 'POST' || selectedRoute.method === 'PUT') {
+      return 'req.body';
+    }
+    return 'None';
+  }, [selectedRoute]);
+
+  const routeHandlerName = useMemo(() => {
+    if (!selectedRoute?.handler) return 'handler()';
+    if (selectedRoute.handler.includes('#')) {
+      return `${selectedRoute.handler.split('#')[1]}()`;
+    }
+    return selectedRoute.handler.split('/').pop() || selectedRoute.handler;
+  }, [selectedRoute]);
+
+  const routeModels = useMemo(() => {
+    if (!selectedRoute?.models || selectedRoute.models.length === 0) return 'No Database';
+    return `${selectedRoute.models.join(', ')}`;
+  }, [selectedRoute]);
 
   // Filtered routes based on search and method
   const filteredRoutes = useMemo(() => {
@@ -521,7 +566,7 @@ export function AttackSurface() {
               </div>
             </div>
 
-            {/* Tab Bar: Security Flow | Code View | Findings (2) | Data Flow | Test */}
+            {/* Tab Bar: Security Flow | Code View | Findings (N) | Data Flow | Test */}
             <div className="flex items-center gap-1 border-b border-border/60 pb-2 text-xs">
               <button
                 type="button"
@@ -557,7 +602,7 @@ export function AttackSurface() {
                     : 'text-muted hover:text-fg',
                 )}
               >
-                Findings (2)
+                Findings ({matchingRouteFindings.length})
               </button>
               <button
                 type="button"
@@ -586,165 +631,327 @@ export function AttackSurface() {
             </div>
 
             {/* FLOW DIAGRAM (from attack-surface.png) */}
-            <div className="rounded-xl border border-border/80 bg-surface-alt/30 p-4 space-y-4">
-              <div className="flex items-center justify-between text-xs overflow-x-auto py-2">
-                {/* 1. Request (Client) */}
-                <div className="flex flex-col items-center">
-                  <div className="grid size-10 place-items-center rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 mb-1.5 shadow-sm">
-                    <Globe className="size-5" />
+            {activeTab === 'flow' && (
+              <>
+                <div className="rounded-xl border border-border/80 bg-surface-alt/30 p-4 space-y-4">
+                  <div className="flex items-center justify-between text-xs overflow-x-auto py-2">
+                    {/* 1. Request (Client) */}
+                    <div className="flex flex-col items-center">
+                      <div className="grid size-10 place-items-center rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 mb-1.5 shadow-sm">
+                        <Globe className="size-5" />
+                      </div>
+                      <span className="font-semibold text-fg text-[11.5px]">Request</span>
+                      <span className="text-[10px] text-muted font-mono">{selectedRoute.method}</span>
+                    </div>
+
+                    <div className="text-muted/60 text-xs px-1">──▶</div>
+
+                    {/* 2. User Input */}
+                    <div className="flex flex-col items-center max-w-[130px] text-center">
+                      <span className="text-[9.5px] text-muted mb-1">User Input</span>
+                      <div className={cn(
+                        'rounded-xl border px-3 py-2 text-center text-xs font-mono font-semibold shadow-sm truncate max-w-[125px]',
+                        routeInputs !== 'None'
+                          ? 'border-danger/40 bg-danger/10 text-danger'
+                          : 'border-border/60 bg-surface-alt/40 text-muted',
+                      )} title={routeInputs}>
+                        {routeInputs}
+                      </div>
+                    </div>
+
+                    <div className="text-muted/60 text-xs px-1">──▶</div>
+
+                    {/* 3. Middleware */}
+                    <div className="flex flex-col items-center max-w-[130px] text-center">
+                      <span className="text-[9.5px] text-muted mb-1">Middleware</span>
+                      <div className={cn(
+                        'rounded-xl border px-3 py-2 text-center text-xs font-mono font-semibold shadow-sm truncate max-w-[125px]',
+                        selectedRoute.protected
+                          ? 'border-primary/40 bg-primary/10 text-primary'
+                          : 'border-amber-500/40 bg-amber-500/10 text-amber-400',
+                      )}>
+                        {selectedRoute.protected ? 'authenticate()' : 'Unprotected'}
+                      </div>
+                    </div>
+
+                    <div className="text-muted/60 text-xs px-1">──▶</div>
+
+                    {/* 4. Controller */}
+                    <div className="flex flex-col items-center max-w-[130px] text-center">
+                      <span className="text-[9.5px] text-muted mb-1">Controller</span>
+                      <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-center text-xs font-mono font-semibold text-primary shadow-sm truncate max-w-[125px]" title={routeHandlerName}>
+                        {routeHandlerName}
+                      </div>
+                    </div>
+
+                    <div className="text-muted/60 text-xs px-1">──▶</div>
+
+                    {/* 5. Database */}
+                    <div className="flex flex-col items-center max-w-[130px] text-center">
+                      <span className="text-[9.5px] text-muted mb-1">Database</span>
+                      <div className={cn(
+                        'grid size-10 place-items-center rounded-xl border mb-1 shadow-sm',
+                        routeModels !== 'No Database'
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                          : 'bg-surface-alt text-muted border-border',
+                      )}>
+                        <Database className="size-5" />
+                      </div>
+                      <span className={cn(
+                        'font-mono text-[10.5px] font-semibold truncate max-w-[125px]',
+                        routeModels !== 'No Database' ? 'text-emerald-400' : 'text-muted',
+                      )} title={routeModels}>
+                        {routeModels}
+                      </span>
+                    </div>
                   </div>
-                  <span className="font-semibold text-fg text-[11.5px]">Request</span>
-                  <span className="text-[10px] text-muted">(Client)</span>
+
+                  {/* Exploit Banner Callout */}
+                  <div className={cn(
+                    'rounded-xl border border-dashed p-2.5 text-center text-xs font-mono flex items-center justify-center gap-2',
+                    topRouteFinding
+                      ? 'border-danger/60 bg-danger/10 text-danger'
+                      : routeGap
+                      ? 'border-amber-500/60 bg-amber-500/10 text-amber-400'
+                      : !selectedRoute.protected
+                      ? 'border-yellow-500/60 bg-yellow-500/10 text-yellow-400'
+                      : 'border-emerald-500/60 bg-emerald-500/10 text-emerald-400',
+                  )}>
+                    {topRouteFinding || routeGap || !selectedRoute.protected ? (
+                      <AlertTriangle className="size-4 shrink-0" />
+                    ) : (
+                      <Check className="size-4 shrink-0" />
+                    )}
+                    <span>
+                      {topRouteFinding
+                        ? (topRouteFinding.attackPath?.narrative || 'User-controlled input reaches database without ownership validation')
+                        : routeGap
+                        ? `Authorization gap detected: ${routeGap.reasons?.join(', ')}`
+                        : !selectedRoute.protected
+                        ? 'Public endpoint accessible without authentication middleware'
+                        : 'Endpoint secured with active authentication checks'}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="text-muted/60 text-xs px-1">──▶</div>
+                {/* SECURITY SIGNALS (images/attack-surface.png) */}
+                <div className="space-y-2.5">
+                  <h4 className="font-bold text-fg text-xs">Security Signals</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                    {/* 1. Input */}
+                    <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                      <div className={cn(
+                        'flex items-center gap-1.5 font-semibold text-[11.5px]',
+                        routeInputs !== 'None' ? 'text-danger' : 'text-emerald-400',
+                      )}>
+                        {routeInputs !== 'None' ? <AlertTriangle className="size-3.5" /> : <Check className="size-3.5" />}
+                        <span>Input</span>
+                      </div>
+                      <div className="text-[10px] text-muted mt-1">{routeInputs !== 'None' ? 'User controlled' : 'None'}</div>
+                      <div className="font-mono text-[11px] text-fg font-medium truncate" title={routeInputs}>
+                        {routeInputs}
+                      </div>
+                    </div>
 
-                {/* 2. User Input req.params.id */}
-                <div className="flex flex-col items-center">
-                  <span className="text-[9.5px] text-muted mb-1">User Input</span>
-                  <div className="rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-center text-xs font-mono font-semibold text-danger shadow-sm">
-                    req.params.id
+                    {/* 2. Authentication */}
+                    <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                      <div className={cn(
+                        'flex items-center gap-1.5 font-semibold text-[11.5px]',
+                        selectedRoute.protected ? 'text-emerald-400' : 'text-danger',
+                      )}>
+                        {selectedRoute.protected ? <Check className="size-3.5" /> : <AlertTriangle className="size-3.5" />}
+                        <span>Authentication</span>
+                      </div>
+                      <div className="text-[10px] text-muted mt-1">{selectedRoute.protected ? 'Present' : 'Missing'}</div>
+                      <div className="font-mono text-[11px] text-fg font-medium truncate">
+                        {selectedRoute.authEnforcement === 'enforcing' ? 'JWT middleware' : selectedRoute.authEnforcement === 'weak' ? 'Weak check' : 'None'}
+                      </div>
+                    </div>
+
+                    {/* 3. Access Control */}
+                    <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                      <div className={cn(
+                        'flex items-center gap-1.5 font-semibold text-[11.5px]',
+                        routeGap ? 'text-danger' : (selectedRoute.protected ? 'text-emerald-400' : 'text-amber-400'),
+                      )}>
+                        {routeGap ? <AlertTriangle className="size-3.5" /> : <Check className="size-3.5" />}
+                        <span>Access Control</span>
+                      </div>
+                      <div className="text-[10px] text-muted mt-1">{routeGap ? 'Missing' : (selectedRoute.protected ? 'Enforced' : 'Public')}</div>
+                      <div className="font-mono text-[11px] text-fg font-medium truncate">
+                        {routeGap ? 'No ownership check' : (selectedRoute.protected ? 'Enforcing' : 'Public route')}
+                      </div>
+                    </div>
+
+                    {/* 4. Database */}
+                    <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                      <div className={cn(
+                        'flex items-center gap-1.5 font-semibold text-[11.5px]',
+                        selectedRoute.mutates ? 'text-danger' : (selectedRoute.models?.length ? 'text-amber-400' : 'text-muted'),
+                      )}>
+                        <Database className="size-3.5" />
+                        <span>Database</span>
+                      </div>
+                      <div className="text-[10px] text-muted mt-1">{selectedRoute.mutates ? 'Direct mutation' : (selectedRoute.models?.length ? 'Direct query' : 'Not queried')}</div>
+                      <div className="font-mono text-[11px] text-fg font-medium truncate">
+                        {selectedRoute.models?.length ? selectedRoute.models.map(m => `${m}.query`).join(', ') : '—'}
+                      </div>
+                    </div>
+
+                    {/* 5. External Service */}
+                    <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                      <div className={cn(
+                        'flex items-center gap-1.5 font-semibold text-[11.5px]',
+                        selectedRoute.exposesSensitive?.length ? 'text-danger' : 'text-muted',
+                      )}>
+                        <Globe className="size-3.5" />
+                        <span>Sensitive Assets</span>
+                      </div>
+                      <div className="text-[10px] text-muted mt-1">{selectedRoute.exposesSensitive?.length ? 'Exposed fields' : 'Not detected'}</div>
+                      <div className="font-mono text-[11px] text-muted font-medium truncate" title={selectedRoute.exposesSensitive?.join(', ') || '—'}>
+                        {selectedRoute.exposesSensitive?.join(', ') || '—'}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-muted/60 text-xs px-1">──▶</div>
+                {/* ALERT CARD */}
+                {topRouteFinding ? (
+                  <div className="flex items-start justify-between gap-4 rounded-xl border border-danger/40 bg-danger/10 p-3.5 text-xs">
+                    <div className="flex items-start gap-3">
+                      <span className="rounded-md bg-danger text-white px-2 py-0.5 text-[10.5px] font-bold uppercase shrink-0 mt-0.5">
+                        {topRouteFinding.severity}
+                      </span>
+                      <div>
+                        <h4 className="font-bold text-fg text-sm capitalize">
+                          {topRouteFinding.type.replace('-', ' ')}
+                        </h4>
+                        <p className="mt-1 text-muted text-[11.5px] leading-relaxed">
+                          {topRouteFinding.attackPath?.narrative || 'Verified security vulnerability discovered on this route.'}
+                        </p>
+                      </div>
+                    </div>
 
-                {/* 3. Middleware authenticate() */}
-                <div className="flex flex-col items-center">
-                  <span className="text-[9.5px] text-muted mb-1">Middleware</span>
-                  <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-center text-xs font-mono font-semibold text-primary shadow-sm">
-                    authenticate()
+                    <div className="flex items-center gap-2 shrink-0">
+                      <NavLink
+                        to={`/findings?id=${topRouteFinding.id}`}
+                        className="flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/20 px-3 py-1.5 font-semibold text-primary hover:bg-primary hover:text-white transition-colors"
+                      >
+                        <span>Inspect Finding</span>
+                        <ArrowRight className="size-3" />
+                      </NavLink>
+                    </div>
                   </div>
+                ) : (
+                  <div className="flex items-start justify-between gap-4 rounded-xl border border-border/80 bg-surface-alt/40 p-3.5 text-xs">
+                    <div className="flex items-start gap-3">
+                      <span className="rounded-md bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 text-[10.5px] font-bold uppercase shrink-0 mt-0.5">
+                        Clean
+                      </span>
+                      <div>
+                        <h4 className="font-bold text-fg text-sm">
+                          No Active Findings on {selectedRoute.path}
+                        </h4>
+                        <p className="mt-1 text-muted text-[11.5px] leading-relaxed">
+                          This route currently has no confirmed vulnerabilities reported by active security agents.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <NavLink
+                        to="/verification"
+                        className="flex items-center gap-1 rounded-lg border border-border/80 bg-surface px-3 py-1.5 font-semibold text-fg hover:bg-surface-alt transition-colors"
+                      >
+                        <span>Verify in Sandbox</span>
+                        <ArrowRight className="size-3" />
+                      </NavLink>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* CODE VIEW TAB */}
+            {activeTab === 'code' && (
+              <div className="rounded-xl border border-border/80 bg-[#090e18] p-4 font-mono text-xs space-y-3">
+                <div className="text-muted text-[11.5px] border-b border-border/40 pb-2 flex items-center justify-between">
+                  <span>Source Location: {selectedRoute.file || 'server/routes.js'}</span>
+                  <span className="text-primary font-bold">{selectedRoute.method}</span>
                 </div>
-
-                <div className="text-muted/60 text-xs px-1">──▶</div>
-
-                {/* 4. Controller getOrderById() */}
-                <div className="flex flex-col items-center">
-                  <span className="text-[9.5px] text-muted mb-1">Controller</span>
-                  <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-center text-xs font-mono font-semibold text-primary shadow-sm">
-                    getOrderById()
-                  </div>
-                </div>
-
-                <div className="text-muted/60 text-xs px-1">──▶</div>
-
-                {/* 5. Database Order.findById() */}
-                <div className="flex flex-col items-center">
-                  <span className="text-[9.5px] text-muted mb-1">Database</span>
-                  <div className="grid size-10 place-items-center rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 mb-1 shadow-sm">
-                    <Database className="size-5" />
-                  </div>
-                  <span className="font-mono text-[10.5px] text-emerald-400 font-semibold">
-                    Order.findById()
-                  </span>
+                <div className="space-y-1 text-fg/90 text-[12px]">
+                  <div><span className="text-muted/60 select-none mr-4">1</span><span className="text-purple-400">route:</span> {selectedRoute.id}</div>
+                  <div><span className="text-muted/60 select-none mr-4">2</span><span className="text-purple-400">handler:</span> {selectedRoute.handler}</div>
+                  <div><span className="text-muted/60 select-none mr-4">3</span><span className="text-purple-400">protection:</span> {selectedRoute.protected ? 'true (enforced)' : 'false (public)'}</div>
+                  <div><span className="text-muted/60 select-none mr-4">4</span><span className="text-purple-400">models:</span> {selectedRoute.models?.join(', ') || 'None'}</div>
                 </div>
               </div>
+            )}
 
-              {/* Exploit Banner Callout */}
-              <div className="rounded-xl border border-dashed border-danger/60 bg-danger/10 p-2.5 text-center text-xs font-mono text-danger flex items-center justify-center gap-2">
-                <AlertTriangle className="size-4 shrink-0" />
-                <span>User-controlled input reaches database without ownership validation</span>
+            {/* FINDINGS TAB */}
+            {activeTab === 'findings' && (
+              <div className="space-y-2">
+                {matchingRouteFindings.length === 0 ? (
+                  <div className="p-8 text-center text-muted border rounded-xl bg-surface-alt/20">
+                    <CheckCircle2 className="size-8 mx-auto text-emerald-400 mb-2" />
+                    <p className="text-xs font-semibold text-fg">No findings recorded for this route</p>
+                    <p className="text-[11px] text-muted mt-1">Run an agent or sandbox verification to inspect for potential vulnerabilities.</p>
+                  </div>
+                ) : (
+                  matchingRouteFindings.map((f) => (
+                    <div key={f.id} className="p-3 border rounded-xl bg-surface-alt/40 flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-danger/20 text-danger text-[10px] font-bold px-1.5 py-0.5 uppercase">{f.severity}</span>
+                          <span className="font-bold text-xs text-fg">{f.type}</span>
+                        </div>
+                        <p className="text-[11px] text-muted mt-1">{f.attackPath?.narrative || 'Vulnerability detected.'}</p>
+                      </div>
+                      <NavLink to={`/findings?id=${f.id}`} className="text-xs text-primary font-semibold hover:underline">View</NavLink>
+                    </div>
+                  ))
+                )}
               </div>
-            </div>
+            )}
 
-            {/* SECURITY SIGNALS (images/attack-surface.png) */}
-            <div className="space-y-2.5">
-              <h4 className="font-bold text-fg text-xs">Security Signals</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
-                {/* 1. Input */}
-                <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
-                  <div className="flex items-center gap-1.5 text-danger font-semibold text-[11.5px]">
-                    <AlertTriangle className="size-3.5" />
-                    <span>Input</span>
+            {/* DATA FLOW TAB */}
+            {activeTab === 'data' && (
+              <div className="p-4 border rounded-xl bg-surface-alt/30 space-y-3 text-xs">
+                <h4 className="font-bold text-fg">Data Model Connections</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between border-b border-border/40 pb-2">
+                    <span className="text-muted">Target Models:</span>
+                    <span className="font-mono text-fg">{selectedRoute.models?.join(', ') || 'None'}</span>
                   </div>
-                  <div className="text-[10px] text-muted mt-1">User controlled</div>
-                  <div className="font-mono text-[11px] text-fg font-medium truncate">
-                    req.params.id
+                  <div className="flex justify-between border-b border-border/40 pb-2">
+                    <span className="text-muted">State Mutation:</span>
+                    <span className="font-mono text-fg">{selectedRoute.mutates ? 'True (Mutates DB)' : 'False (Read Only)'}</span>
                   </div>
-                </div>
-
-                {/* 2. Authentication */}
-                <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
-                  <div className="flex items-center gap-1.5 text-emerald-400 font-semibold text-[11.5px]">
-                    <Check className="size-3.5" />
-                    <span>Authentication</span>
+                  <div className="flex justify-between">
+                    <span className="text-muted">Exposed Sensitive Fields:</span>
+                    <span className="font-mono text-danger">{selectedRoute.exposesSensitive?.join(', ') || 'None'}</span>
                   </div>
-                  <div className="text-[10px] text-muted mt-1">Present</div>
-                  <div className="font-mono text-[11px] text-fg font-medium truncate">
-                    JWT middleware
-                  </div>
-                </div>
-
-                {/* 3. Access Control */}
-                <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
-                  <div className="flex items-center gap-1.5 text-danger font-semibold text-[11.5px]">
-                    <AlertTriangle className="size-3.5" />
-                    <span>Access Control</span>
-                  </div>
-                  <div className="text-[10px] text-muted mt-1">Missing</div>
-                  <div className="font-mono text-[11px] text-fg font-medium truncate">
-                    No ownership check
-                  </div>
-                </div>
-
-                {/* 4. Database */}
-                <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
-                  <div className="flex items-center gap-1.5 text-danger font-semibold text-[11.5px]">
-                    <AlertTriangle className="size-3.5" />
-                    <span>Database</span>
-                  </div>
-                  <div className="text-[10px] text-muted mt-1">Direct query</div>
-                  <div className="font-mono text-[11px] text-fg font-medium truncate">
-                    Order.findById()
-                  </div>
-                </div>
-
-                {/* 5. External Service */}
-                <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
-                  <div className="flex items-center gap-1.5 text-muted font-semibold text-[11.5px]">
-                    <Globe className="size-3.5" />
-                    <span>External Service</span>
-                  </div>
-                  <div className="text-[10px] text-muted mt-1">Not used</div>
-                  <div className="font-mono text-[11px] text-muted font-medium">—</div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* ALERT CARD: Possible IDOR / Broken Access Control */}
-            <div className="flex items-start justify-between gap-4 rounded-xl border border-danger/40 bg-danger/10 p-3.5 text-xs">
-              <div className="flex items-start gap-3">
-                <span className="rounded-md bg-danger text-white px-2 py-0.5 text-[10.5px] font-bold uppercase shrink-0 mt-0.5">
-                  High
-                </span>
-                <div>
-                  <h4 className="font-bold text-fg text-sm">
-                    Possible IDOR / Broken Access Control
-                  </h4>
-                  <p className="mt-1 text-muted text-[11.5px] leading-relaxed">
-                    User can access arbitrary order by modifying the :id parameter. No ownership
-                    validation is performed before querying the database.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
+            {/* TEST TAB */}
+            {activeTab === 'test' && (
+              <div className="p-6 border rounded-xl bg-surface-alt/30 text-center space-y-3">
+                <FlaskConical className="size-8 mx-auto text-primary" />
+                <h4 className="font-bold text-fg text-sm">Dynamic Exploit Verification</h4>
+                <p className="text-xs text-muted max-w-sm mx-auto">
+                  Execute an automated security proof against {selectedRoute.id} in the isolated Docker container sandbox.
+                </p>
                 <NavLink
-                  to="/findings?id=F-0011"
-                  className="flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/20 px-3 py-1.5 font-semibold text-primary hover:bg-primary hover:text-white transition-colors"
+                  to="/verification"
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow hover:bg-primary/90"
                 >
-                  <span>Inspect Finding</span>
-                  <ArrowRight className="size-3" />
+                  <Play className="size-3.5 fill-current" />
+                  <span>Launch Verification in Sandbox</span>
                 </NavLink>
-                <button
-                  type="button"
-                  className="grid size-7 place-items-center rounded-lg hover:bg-surface-alt text-muted"
-                >
-                  <MoreHorizontal className="size-3.5" />
-                </button>
               </div>
-            </div>
+            )}
           </div>
           )}
 

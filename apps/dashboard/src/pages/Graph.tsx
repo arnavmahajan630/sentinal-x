@@ -29,6 +29,7 @@ import {
   Key,
   Mail,
   Cpu,
+  Terminal,
 } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
 import { fetchGraph, fetchFindings } from '@/lib/api';
@@ -42,9 +43,11 @@ export function Graph() {
   const { activeProject } = useProject();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedNodeType, setSelectedNodeType] = useState<string>('ALL');
+  const [selectedRisk, setSelectedRisk] = useState<string>('ALL');
   const [selectedView, setSelectedView] = useState<'graph' | 'tree' | 'table'>('graph');
   const [showPaths, setShowPaths] = useState(true);
-  const [selectedNodeId, setSelectedNodeId] = useState<string>('node-sensitive-password');
+  const [selectedNodeId, setSelectedNodeId] = useState<string>('');
   const [detailTab, setDetailTab] = useState<'relationships' | 'findings' | 'context'>('relationships');
   const [zoomLevel, setZoomLevel] = useState(100);
 
@@ -70,6 +73,101 @@ export function Graph() {
   const entryPoints = graphData?.nodes?.filter((n) => n.type?.toLowerCase() === 'route').length ?? 0;
   const highRiskPaths = findingsList.filter((f) => f.severity === 'critical' || f.severity === 'high').length;
   const criticalFindings = findingsList.filter((f) => f.severity === 'critical').length;
+
+  // Set of node IDs affected by findings
+  const vulnerableNodeIds = useMemo(() => {
+    const set = new Set<string>();
+    findingsList.forEach((f) => {
+      f.affectedNodes?.forEach((n) => set.add(n));
+    });
+    return set;
+  }, [findingsList]);
+
+  // Filtered nodes based on search and filters
+  const filteredNodes = useMemo(() => {
+    const rawNodes = graphData?.nodes || [];
+    return rawNodes.filter((node) => {
+      if (searchTerm) {
+        const q = searchTerm.toLowerCase();
+        const matches =
+          node.key?.toLowerCase().includes(q) ||
+          node.id?.toLowerCase().includes(q) ||
+          node.type?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+      if (selectedNodeType !== 'ALL') {
+        if (node.type?.toLowerCase() !== selectedNodeType.toLowerCase()) return false;
+      }
+      if (selectedRisk !== 'ALL') {
+        const isVuln = vulnerableNodeIds.has(node.id) || vulnerableNodeIds.has(node.key);
+        if (!isVuln) return false;
+      }
+      return true;
+    });
+  }, [graphData?.nodes, searchTerm, selectedNodeType, selectedRisk, vulnerableNodeIds]);
+
+  // Group nodes into 4 columns (tiers) for layout
+  const tieredNodes = useMemo(() => {
+    const col1: GraphNode[] = []; // Routes & Inputs
+    const col2: GraphNode[] = []; // Middleware & Functions
+    const col3: GraphNode[] = []; // Models & Databases
+    const col4: GraphNode[] = []; // Assets, Secrets, External
+
+    filteredNodes.forEach((node) => {
+      const t = node.type?.toLowerCase();
+      if (t === 'route' || t === 'input') {
+        if (col1.length < 5 || vulnerableNodeIds.has(node.id)) col1.push(node);
+      } else if (t === 'middleware' || t === 'function') {
+        if (col2.length < 5 || vulnerableNodeIds.has(node.id)) col2.push(node);
+      } else if (t === 'model' || t === 'database') {
+        if (col3.length < 5 || vulnerableNodeIds.has(node.id)) col3.push(node);
+      } else {
+        if (col4.length < 5 || vulnerableNodeIds.has(node.id)) col4.push(node);
+      }
+    });
+
+    return {
+      col1: col1.slice(0, 5),
+      col2: col2.slice(0, 5),
+      col3: col3.slice(0, 5),
+      col4: col4.slice(0, 5),
+    };
+  }, [filteredNodes, vulnerableNodeIds]);
+
+  // Position nodes on canvas
+  const { nodeCoords, allVisibleNodes } = useMemo(() => {
+    const coords: Record<string, { x: number; y: number; node: GraphNode }> = {};
+    const visible: Array<{ x: number; y: number; node: GraphNode }> = [];
+
+    const placeCol = (list: GraphNode[], x: number) => {
+      list.forEach((node, i) => {
+        const y = 50 + i * 90;
+        coords[node.id] = { x, y, node };
+        coords[node.key] = { x, y, node };
+        visible.push({ x, y, node });
+      });
+    };
+
+    placeCol(tieredNodes.col1, 150);
+    placeCol(tieredNodes.col2, 340);
+    placeCol(tieredNodes.col3, 530);
+    placeCol(tieredNodes.col4, 720);
+
+    return { nodeCoords: coords, allVisibleNodes: visible };
+  }, [tieredNodes]);
+
+  // Selected node
+  const activeSelectedNodeId = selectedNodeId || allVisibleNodes[0]?.node?.id || graphData?.nodes?.[0]?.id || '';
+  const selectedNode = useMemo(() => {
+    const all = graphData?.nodes || [];
+    return all.find((n) => n.id === activeSelectedNodeId || n.key === activeSelectedNodeId) || all[0] || null;
+  }, [graphData?.nodes, activeSelectedNodeId]);
+
+  // Visible edges
+  const visibleEdges = useMemo(() => {
+    const rawEdges = graphData?.edges || [];
+    return rawEdges.filter((e) => nodeCoords[e.from] && nodeCoords[e.to]);
+  }, [graphData?.edges, nodeCoords]);
 
   return (
     <div className="space-y-6">
@@ -160,20 +258,27 @@ export function Graph() {
             />
           </div>
 
-          <select className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer">
-            <option>Node Type ⌵</option>
-            <option>Route</option>
-            <option>Function</option>
-            <option>Middleware</option>
-            <option>Database</option>
+          <select
+            value={selectedNodeType}
+            onChange={(e) => setSelectedNodeType(e.target.value)}
+            className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer"
+          >
+            <option value="ALL">Node Type: All ⌵</option>
+            <option value="Route">Routes</option>
+            <option value="Function">Functions</option>
+            <option value="Middleware">Middleware</option>
+            <option value="Model">Models</option>
+            <option value="Asset">Assets</option>
           </select>
 
-          <select className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer">
-            <option>Risk Level ⌵</option>
-            <option>Critical</option>
-            <option>High</option>
-            <option>Medium</option>
-            <option>Low</option>
+          <select
+            value={selectedRisk}
+            onChange={(e) => setSelectedRisk(e.target.value)}
+            className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer"
+          >
+            <option value="ALL">Risk Level: All ⌵</option>
+            <option value="Critical">Critical Findings</option>
+            <option value="High">High Risk Paths</option>
           </select>
 
           <select className="rounded-xl border border-border/80 bg-surface-alt/50 px-3 py-1.5 text-xs font-medium text-fg focus:outline-none cursor-pointer">
@@ -357,38 +462,55 @@ export function Graph() {
         </div>
 
         {/* Main Canvas Interactive Topology Map (Matching secgrapg.png) */}
-        <div className="flex-1 flex items-center justify-center p-8 overflow-auto">
-          <div className="relative w-full max-w-4xl min-h-[460px] flex items-center justify-center">
+        <div className="flex-1 flex items-center justify-center p-8 overflow-auto min-h-[500px]">
+          <div
+            className="relative w-full max-w-5xl min-h-[480px] flex items-center justify-center"
+            style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
+          >
             {/* SVG Relationship Lines Background */}
             <svg className="absolute inset-0 size-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-              {/* Path from Client to /api/auth */}
-              <path d="M 80 230 C 120 230, 140 180, 180 180" stroke="#3b66ff" strokeWidth="2" fill="none" />
-              {/* Path from Client to req.body */}
-              <path d="M 80 230 C 120 230, 160 300, 220 300" stroke="#f43f5e" strokeWidth="2" strokeDasharray="4 4" fill="none" />
-              {/* Path from /api/auth to jwt.js */}
-              <path d="M 230 150 C 230 110, 230 90, 230 80" stroke="#3b66ff" strokeWidth="2" fill="none" />
-              {/* Path from jwt.js to authenticate() */}
-              <path d="M 270 60 C 310 60, 310 180, 310 180" stroke="#10b981" strokeWidth="2" fill="none" />
-              {/* Path from authenticate() to user.controller.js */}
-              <path d="M 360 190 C 390 190, 400 190, 420 190" stroke="#3b66ff" strokeWidth="2" fill="none" />
-              {/* Path from req.body to user.controller.js */}
-              <path d="M 270 300 C 350 300, 400 230, 430 210" stroke="#f43f5e" strokeWidth="2" strokeDasharray="4 4" fill="none" />
-              {/* Path from .env to user.controller.js */}
-              <path d="M 435 340 L 435 220" stroke="#94a3b8" strokeWidth="2" fill="none" />
-              {/* Path from user.controller.js to User (MongoDB) */}
-              <path d="M 480 170 C 510 140, 520 130, 550 130" stroke="#f59e0b" strokeWidth="2" fill="none" />
-              {/* Path from user.controller.js to sendEmail() */}
-              <path d="M 480 200 C 510 230, 520 240, 550 240" stroke="#3b66ff" strokeWidth="2" fill="none" />
-              {/* Path from User (MongoDB) to Sensitive Data user.password */}
-              <path d="M 620 130 C 650 130, 660 110, 680 110" stroke="#ef4444" strokeWidth="3" strokeDasharray="6 4" fill="none" />
-              {/* Path from sendEmail() to Nodemailer */}
-              <path d="M 620 240 L 670 240" stroke="#a855f7" strokeWidth="2" fill="none" />
-              {/* Path from .env to OpenAI */}
-              <path d="M 480 370 L 660 370" stroke="#a855f7" strokeWidth="2" fill="none" />
+              {/* Virtual Client connecting to first Route */}
+              {showPaths && tieredNodes.col1[0] && (() => {
+                const targetNode = tieredNodes.col1[0];
+                const pos = targetNode ? nodeCoords[targetNode.id] : undefined;
+                const targetY = (pos?.y ?? 50) + 22;
+                const targetX = pos?.x ?? 150;
+                return (
+                  <path
+                    d={`M 65 220 C 100 220, 110 ${targetY}, ${targetX} ${targetY}`}
+                    stroke="#3b66ff"
+                    strokeWidth="2"
+                    fill="none"
+                  />
+                );
+              })()}
+
+              {/* Dynamic Real Edges */}
+              {showPaths && visibleEdges.map((edge, idx) => {
+                const fromPos = nodeCoords[edge.from];
+                const toPos = nodeCoords[edge.to];
+                if (!fromPos || !toPos) return null;
+                const isEdgeVuln = (vulnerableNodeIds.has(edge.from) || vulnerableNodeIds.has(edge.to));
+                const x1 = fromPos.x + 120;
+                const y1 = fromPos.y + 24;
+                const x2 = toPos.x;
+                const y2 = toPos.y + 24;
+                const dx = Math.abs(x2 - x1) * 0.5;
+
+                return (
+                  <path
+                    key={edge.id || `${edge.from}-${edge.to}-${idx}`}
+                    d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
+                    stroke={isEdgeVuln ? '#ef4444' : edge.type === 'ACCESSES' ? '#f59e0b' : edge.type === 'PROTECTED_BY' ? '#10b981' : '#3b66ff'}
+                    strokeWidth={isEdgeVuln ? 2.5 : 1.8}
+                    strokeDasharray={isEdgeVuln ? '5 4' : 'none'}
+                    fill="none"
+                  />
+                );
+              })}
             </svg>
 
-            {/* NODES (Positioned matching mockup) */}
-            {/* 1. Client (External) */}
+            {/* Virtual Client Node */}
             <div
               onClick={() => setSelectedNodeId('node-client')}
               className="absolute left-4 top-[200px] flex flex-col items-center cursor-pointer group"
@@ -400,139 +522,61 @@ export function Graph() {
               <span className="text-[10px] text-muted">(External)</span>
             </div>
 
-            {/* 2. Route /api/auth */}
-            <div
-              onClick={() => setSelectedNodeId('node-api-auth')}
-              className="absolute left-[160px] top-[140px] rounded-xl border border-danger/60 bg-danger/10 p-3 shadow-md cursor-pointer hover:border-danger transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-danger animate-pulse" />
-                <span className="font-mono text-xs font-bold text-danger">/api/auth</span>
-              </div>
-              <span className="text-[10px] font-mono text-muted mt-0.5 block">POST</span>
-            </div>
+            {/* Dynamic AST Nodes */}
+            {allVisibleNodes.map(({ x, y, node }) => {
+              const isNodeSelected = selectedNode?.id === node.id || selectedNode?.key === node.key;
+              const isNodeVuln = vulnerableNodeIds.has(node.id) || vulnerableNodeIds.has(node.key);
+              const label =
+                node.props?.path ||
+                node.props?.model ||
+                node.props?.field ||
+                node.props?.name ||
+                node.key?.split('#')[1] ||
+                node.key?.split('/').pop() ||
+                node.key ||
+                node.id;
 
-            {/* 3. User Input req.body */}
-            <div
-              onClick={() => setSelectedNodeId('node-req-body')}
-              className="absolute left-[170px] top-[280px] rounded-xl border border-danger/60 bg-danger/10 p-3 shadow-md cursor-pointer hover:border-danger transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <AlertTriangle className="size-3 text-danger" />
-                <span className="font-mono text-xs font-bold text-danger">req.body</span>
-              </div>
-              <span className="text-[10px] text-muted mt-0.5 block">User Input</span>
-            </div>
-
-            {/* 4. jwt.js Middleware */}
-            <div
-              onClick={() => setSelectedNodeId('node-jwt-middleware')}
-              className="absolute left-[210px] top-[40px] rounded-xl border border-primary/50 bg-surface-alt/70 p-3 shadow-md cursor-pointer hover:border-primary transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <Lock className="size-3 text-primary" />
-                <span className="font-mono text-xs font-bold text-fg">jwt.js</span>
-              </div>
-              <span className="text-[10px] text-muted mt-0.5 block">Middleware</span>
-            </div>
-
-            {/* 5. authenticate() Function */}
-            <div
-              onClick={() => setSelectedNodeId('node-auth-fn')}
-              className="absolute left-[290px] top-[160px] rounded-xl border border-emerald-500/50 bg-emerald-500/10 p-3 shadow-md cursor-pointer hover:border-emerald-500 transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck className="size-3 text-emerald-400" />
-                <span className="font-mono text-xs font-bold text-fg">authenticate()</span>
-              </div>
-              <span className="text-[10px] text-muted mt-0.5 block">Function</span>
-            </div>
-
-            {/* 6. user.controller.js */}
-            <div
-              onClick={() => setSelectedNodeId('node-user-controller')}
-              className="absolute left-[400px] top-[160px] rounded-xl border border-primary/50 bg-surface-alt/70 p-3 shadow-md cursor-pointer hover:border-primary transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <Code2 className="size-3 text-primary" />
-                <span className="font-mono text-xs font-bold text-fg">user.controller.js</span>
-              </div>
-              <span className="text-[10px] text-muted mt-0.5 block">Controller</span>
-            </div>
-
-            {/* 7. .env Configuration */}
-            <div
-              onClick={() => setSelectedNodeId('node-env')}
-              className="absolute left-[420px] top-[340px] rounded-xl border border-border bg-surface-alt/60 p-2.5 shadow-md cursor-pointer hover:border-muted transition-colors text-center"
-            >
-              <FileCode className="size-4 text-muted mx-auto" />
-              <span className="font-mono text-xs font-bold text-fg mt-1 block">.env</span>
-              <span className="text-[9.5px] text-muted">Configuration</span>
-            </div>
-
-            {/* 8. User (MongoDB) */}
-            <div
-              onClick={() => setSelectedNodeId('node-user-model')}
-              className="absolute left-[540px] top-[100px] rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 shadow-md cursor-pointer hover:border-amber-500 transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <Database className="size-3 text-amber-400" />
-                <span className="font-mono text-xs font-bold text-fg">User</span>
-              </div>
-              <span className="text-[10px] text-muted mt-0.5 block">(MongoDB)</span>
-            </div>
-
-            {/* 9. sendEmail() Function */}
-            <div
-              onClick={() => setSelectedNodeId('node-send-email')}
-              className="absolute left-[540px] top-[220px] rounded-xl border border-primary/40 bg-surface-alt/60 p-2.5 shadow-md cursor-pointer hover:border-primary transition-colors"
-            >
-              <span className="font-mono text-xs font-bold text-fg block">sendEmail()</span>
-              <span className="text-[10px] text-muted">Function</span>
-            </div>
-
-            {/* 10. Sensitive Data user.password (TARGET / HIGHLIGHTED) */}
-            <div
-              onClick={() => setSelectedNodeId('node-sensitive-password')}
-              className="absolute left-[670px] top-[70px] rounded-xl border-2 border-danger bg-danger/15 p-3.5 shadow-xl shadow-danger/25 cursor-pointer ring-2 ring-danger/40 animate-pulse"
-            >
-              <div className="flex items-center gap-2">
-                <Key className="size-4 text-danger" />
-                <div>
-                  <span className="font-mono text-xs font-bold text-danger block">
-                    Sensitive Data
-                  </span>
-                  <span className="font-mono text-[11px] text-fg">user.password</span>
+              return (
+                <div
+                  key={node.id}
+                  onClick={() => setSelectedNodeId(node.id)}
+                  style={{ left: `${x}px`, top: `${y}px` }}
+                  className={cn(
+                    'absolute rounded-xl p-2.5 shadow-md cursor-pointer transition-all max-w-[155px] min-w-[125px]',
+                    isNodeVuln
+                      ? 'border-2 border-danger bg-danger/15 shadow-danger/25 ring-2 ring-danger/40 animate-pulse'
+                      : isNodeSelected
+                      ? 'border-2 border-primary bg-primary/20 shadow-primary/20 ring-1 ring-primary/40'
+                      : 'border border-border/80 bg-surface-alt/70 hover:border-primary/50',
+                  )}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {node.type?.toLowerCase() === 'route' ? (
+                      <span className={cn('size-2 rounded-full shrink-0', isNodeVuln ? 'bg-danger animate-pulse' : 'bg-primary')} />
+                    ) : node.type?.toLowerCase() === 'asset' ? (
+                      <Key className="size-3 text-danger shrink-0" />
+                    ) : node.type?.toLowerCase() === 'model' ? (
+                      <Database className="size-3 text-amber-400 shrink-0" />
+                    ) : node.type?.toLowerCase() === 'middleware' ? (
+                      <Lock className="size-3 text-primary shrink-0" />
+                    ) : (
+                      <Terminal className="size-3 text-primary shrink-0" />
+                    )}
+                    <span className={cn('font-mono text-xs font-bold truncate', isNodeVuln ? 'text-danger' : 'text-fg')} title={node.key}>
+                      {label}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[9.5px] text-muted mt-1 font-mono">
+                    <span className="capitalize">{node.type}</span>
+                    {isNodeVuln ? (
+                      <span className="font-bold text-danger uppercase text-[8.5px]">High Risk</span>
+                    ) : (
+                      <span className="text-[8.5px]">{node.props?.method || ''}</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <span className="mt-2 inline-block rounded bg-danger px-1.5 py-0.2 text-[9.5px] font-bold text-white uppercase tracking-wider">
-                High Risk Path
-              </span>
-            </div>
-
-            {/* 11. Nodemailer External Service */}
-            <div
-              onClick={() => setSelectedNodeId('node-nodemailer')}
-              className="absolute left-[670px] top-[220px] rounded-xl border border-purple-500/40 bg-purple-500/10 p-2.5 shadow-md cursor-pointer hover:border-purple-500 transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <Mail className="size-3.5 text-purple-400" />
-                <span className="font-mono text-xs font-bold text-fg">Nodemailer</span>
-              </div>
-              <span className="text-[10px] text-muted mt-0.5 block">External Service</span>
-            </div>
-
-            {/* 12. OpenAI External Service */}
-            <div
-              onClick={() => setSelectedNodeId('node-openai')}
-              className="absolute left-[660px] top-[340px] rounded-xl border border-purple-500/40 bg-purple-500/10 p-2.5 shadow-md cursor-pointer hover:border-purple-500 transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                <Cpu className="size-3.5 text-purple-400" />
-                <span className="font-mono text-xs font-bold text-fg">OpenAI</span>
-              </div>
-              <span className="text-[10px] text-muted mt-0.5 block">External Service</span>
-            </div>
+              );
+            })}
           </div>
         </div>
 
@@ -580,48 +624,61 @@ export function Graph() {
         <div className="w-80 shrink-0 border-l border-border/80 bg-surface/90 p-5 rounded-r-2xl backdrop-blur-md space-y-5 hidden md:block">
           <div className="flex items-center justify-between pb-3 border-b border-border/60">
             <h3 className="font-bold text-fg text-sm">Node Details</h3>
-            <button type="button" className="text-muted hover:text-fg text-xs">
-              ✕
-            </button>
+            <span className="text-muted text-xs font-mono">{selectedNode?.type || 'AST Node'}</span>
           </div>
 
           {/* Selected Node Card */}
-          <div className="rounded-xl border border-danger/40 bg-danger/10 p-3.5 space-y-2">
+          <div className={cn(
+            'rounded-xl border p-3.5 space-y-2',
+            vulnerableNodeIds.has(selectedNode?.id || '') || vulnerableNodeIds.has(selectedNode?.key || '')
+              ? 'border-danger/40 bg-danger/10'
+              : 'border-border/80 bg-surface-alt/50',
+          )}>
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="grid size-9 place-items-center rounded-lg bg-danger/20 text-danger">
-                  <Database className="size-4" />
+                <div className={cn(
+                  'grid size-9 place-items-center rounded-lg',
+                  vulnerableNodeIds.has(selectedNode?.id || '') ? 'bg-danger/20 text-danger' : 'bg-primary/20 text-primary',
+                )}>
+                  {selectedNode?.type?.toLowerCase() === 'route' ? <Globe className="size-4" /> : <Database className="size-4" />}
                 </div>
-                <div>
-                  <h4 className="font-bold text-fg text-sm">Sensitive Data</h4>
-                  <div className="font-mono text-xs text-danger">user.password</div>
+                <div className="min-w-0">
+                  <h4 className="font-bold text-fg text-sm capitalize">{selectedNode?.type || 'Client'}</h4>
+                  <div className="font-mono text-xs text-muted truncate max-w-[160px]" title={selectedNode?.key || selectedNode?.id}>
+                    {selectedNode?.props?.path || selectedNode?.props?.model || selectedNode?.key || selectedNode?.id || 'node-client'}
+                  </div>
                 </div>
               </div>
-              <span className="rounded bg-danger text-white px-2 py-0.5 text-[10px] font-bold uppercase">
-                High Risk
+              <span className={cn(
+                'rounded px-2 py-0.5 text-[10px] font-bold uppercase',
+                vulnerableNodeIds.has(selectedNode?.id || '') ? 'bg-danger text-white' : 'bg-surface-alt text-muted border border-border',
+              )}>
+                {vulnerableNodeIds.has(selectedNode?.id || '') ? 'High Risk' : 'Normal'}
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-2 text-[11px] border-t border-danger/20">
+            <div className="grid grid-cols-2 gap-2 pt-2 text-[11px] border-t border-border/40">
               <div>
                 <span className="text-muted">Type:</span>
-                <span className="font-medium text-fg block">Database Field</span>
+                <span className="font-medium text-fg block capitalize">{selectedNode?.type || 'Client'}</span>
               </div>
               <div>
                 <span className="text-muted">Layer:</span>
-                <span className="font-medium text-fg block">Data</span>
+                <span className="font-medium text-fg block">
+                  {selectedNode?.type?.toLowerCase() === 'route' ? 'Presentation' : selectedNode?.type?.toLowerCase() === 'model' ? 'Data' : 'Logic'}
+                </span>
               </div>
               <div>
                 <span className="text-muted">Risk Level:</span>
-                <span className="font-bold text-danger block">High</span>
+                <span className={cn('font-bold block', vulnerableNodeIds.has(selectedNode?.id || '') ? 'text-danger' : 'text-emerald-400')}>
+                  {vulnerableNodeIds.has(selectedNode?.id || '') ? 'Critical / High' : 'Clean'}
+                </span>
               </div>
               <div>
-                <span className="text-muted">File/Location:</span>
-                <span className="font-mono text-muted block truncate">models/user.js:12</span>
-              </div>
-              <div className="col-span-2">
-                <span className="text-muted">Data Classification:</span>
-                <span className="font-medium text-fg block">Credential</span>
+                <span className="text-muted">Location:</span>
+                <span className="font-mono text-muted block truncate" title={selectedNode?.loc?.file || 'N/A'}>
+                  {selectedNode?.loc?.file ? `${selectedNode.loc.file.split('/').pop()}:${selectedNode.loc.line || 1}` : 'AST Graph'}
+                </span>
               </div>
             </div>
           </div>
@@ -666,49 +723,90 @@ export function Graph() {
             </button>
           </div>
 
-          {/* Incoming Connections */}
-          <div className="space-y-2 text-xs">
-            <div className="font-bold text-muted text-[11px] uppercase tracking-wider">
-              Incoming (2)
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between rounded-lg border border-border/60 bg-surface-alt/40 p-2">
-                <div className="flex items-center gap-2">
-                  <Database className="size-3.5 text-amber-400" />
-                  <span className="font-medium text-fg">User (MongoDB)</span>
+          {/* Relationships Content */}
+          {detailTab === 'relationships' && (
+            <div className="space-y-4 text-xs">
+              {/* Incoming Connections */}
+              <div className="space-y-2">
+                <div className="font-bold text-muted text-[11px] uppercase tracking-wider">
+                  Incoming ({graphData?.edges?.filter((e) => selectedNode && (e.to === selectedNode.id || e.to === selectedNode.key)).length || 0})
                 </div>
-                <span className="rounded bg-surface px-1.5 py-0.2 text-[10px] font-mono text-muted">
-                  Reads
-                </span>
+                <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                  {graphData?.edges?.filter((e) => selectedNode && (e.to === selectedNode.id || e.to === selectedNode.key)).slice(0, 5).map((e, idx) => (
+                    <div key={idx} className="flex items-center justify-between rounded-lg border border-border/60 bg-surface-alt/40 p-2">
+                      <span className="font-mono text-fg text-[11px] truncate max-w-[140px]" title={e.from}>{e.from.split(':').pop()}</span>
+                      <span className="rounded bg-surface px-1.5 py-0.2 text-[9.5px] font-mono text-primary">{e.type}</span>
+                    </div>
+                  ))}
+                  {(!graphData?.edges || graphData.edges.filter((e) => selectedNode && (e.to === selectedNode.id || e.to === selectedNode.key)).length === 0) && (
+                    <div className="text-muted text-[11px] italic bg-surface-alt/20 p-2 rounded-lg text-center">No incoming connections</div>
+                  )}
+                </div>
               </div>
 
-              <div className="flex items-center justify-between rounded-lg border border-border/60 bg-surface-alt/40 p-2">
-                <div className="flex items-center gap-2">
-                  <Lock className="size-3.5 text-primary" />
-                  <span className="font-medium text-fg">authenticate()</span>
+              {/* Outgoing Connections */}
+              <div className="space-y-2">
+                <div className="font-bold text-muted text-[11px] uppercase tracking-wider">
+                  Outgoing ({graphData?.edges?.filter((e) => selectedNode && (e.from === selectedNode.id || e.from === selectedNode.key)).length || 0})
                 </div>
-                <span className="rounded bg-surface px-1.5 py-0.2 text-[10px] font-mono text-muted">
-                  Writes
-                </span>
+                <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                  {graphData?.edges?.filter((e) => selectedNode && (e.from === selectedNode.id || e.from === selectedNode.key)).slice(0, 5).map((e, idx) => (
+                    <div key={idx} className="flex items-center justify-between rounded-lg border border-border/60 bg-surface-alt/40 p-2">
+                      <span className="font-mono text-fg text-[11px] truncate max-w-[140px]" title={e.to}>{e.to.split(':').pop()}</span>
+                      <span className="rounded bg-surface px-1.5 py-0.2 text-[9.5px] font-mono text-primary">{e.type}</span>
+                    </div>
+                  ))}
+                  {(!graphData?.edges || graphData.edges.filter((e) => selectedNode && (e.from === selectedNode.id || e.from === selectedNode.key)).length === 0) && (
+                    <div className="text-muted text-[11px] italic bg-surface-alt/20 p-2 rounded-lg text-center">No outgoing connections</div>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Outgoing Connections */}
-          <div className="space-y-2 text-xs">
-            <div className="font-bold text-muted text-[11px] uppercase tracking-wider">
-              Outgoing (0)
+          {/* Findings Content */}
+          {detailTab === 'findings' && (
+            <div className="space-y-2 text-xs">
+              {findingsList.filter((f) => selectedNode && f.affectedNodes?.some((n) => n === selectedNode.id || n === selectedNode.key)).length === 0 ? (
+                <div className="p-4 text-center text-muted bg-surface-alt/20 border rounded-xl">
+                  <CheckCircle2 className="size-6 text-emerald-400 mx-auto mb-1.5" />
+                  <p className="font-semibold text-fg">No direct findings</p>
+                  <p className="text-[10.5px] text-muted mt-0.5">This node has no active vulnerabilities assigned.</p>
+                </div>
+              ) : (
+                findingsList
+                  .filter((f) => selectedNode && f.affectedNodes?.some((n) => n === selectedNode.id || n === selectedNode.key))
+                  .map((f) => (
+                    <div key={f.id} className="p-2.5 rounded-xl border border-danger/40 bg-danger/10 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-danger">{f.type}</span>
+                        <span className="text-[10px] font-bold uppercase rounded bg-danger text-white px-1.5">{f.severity}</span>
+                      </div>
+                      <p className="text-[11px] text-muted">{f.attackPath?.narrative || 'Confirmed vulnerability'}</p>
+                      <NavLink to={`/findings?id=${f.id}`} className="text-[11px] text-primary font-semibold hover:underline block pt-1">
+                        View Dossier →
+                      </NavLink>
+                    </div>
+                  ))
+              )}
             </div>
-            <div className="text-muted text-[11px] italic bg-surface-alt/20 p-2 rounded-lg text-center">
-              No outgoing relationships
+          )}
+
+          {/* Context Content */}
+          {detailTab === 'context' && (
+            <div className="space-y-2 text-xs font-mono">
+              <div className="p-2.5 rounded-xl border bg-black/50 text-[11px] overflow-x-auto text-fg">
+                <pre>{JSON.stringify(selectedNode?.props || { id: selectedNode?.id, key: selectedNode?.key }, null, 2)}</pre>
+              </div>
             </div>
-          </div>
+          )}
 
           <button
             type="button"
+            onClick={() => navigate('/attack-surface')}
             className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-primary py-2 text-xs font-semibold text-white shadow-sm hover:bg-primary/90"
           >
-            <span>View in Code</span>
+            <span>View in Attack Surface</span>
             <ArrowRight className="size-3" />
           </button>
         </div>
@@ -725,7 +823,7 @@ export function Graph() {
               <div className="flex items-center gap-2">
                 <h3 className="font-bold text-fg text-sm">Attack Paths</h3>
                 <span className="rounded-full bg-danger/10 border border-danger/30 px-2 py-0.2 text-[10px] font-bold text-danger">
-                  High Risk Paths
+                  {highRiskPaths} High Risk Paths
                 </span>
               </div>
               <NavLink to="/findings" className="text-xs font-semibold text-primary hover:underline">
@@ -743,36 +841,27 @@ export function Graph() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30 font-mono text-[11px]">
-                <tr>
-                  <td className="py-2.5 text-danger font-bold">1</td>
-                  <td className="py-2.5 text-fg">Client → /api/auth → User → user.password</td>
-                  <td className="py-2.5">
-                    <span className="rounded bg-danger/20 text-danger px-1.5 py-0.2 text-[10px] font-bold">
-                      Critical
-                    </span>
-                  </td>
-                  <td className="py-2.5 text-right text-muted">4</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 text-amber-400 font-bold">2</td>
-                  <td className="py-2.5 text-fg">Client → /api/orders → MongoDB → orders</td>
-                  <td className="py-2.5">
-                    <span className="rounded bg-amber-500/20 text-amber-400 px-1.5 py-0.2 text-[10px] font-bold">
-                      High
-                    </span>
-                  </td>
-                  <td className="py-2.5 text-right text-muted">5</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 text-yellow-400 font-bold">3</td>
-                  <td className="py-2.5 text-fg">Client → /api/users → sendEmail → External</td>
-                  <td className="py-2.5">
-                    <span className="rounded bg-yellow-500/20 text-yellow-400 px-1.5 py-0.2 text-[10px] font-bold">
-                      Medium
-                    </span>
-                  </td>
-                  <td className="py-2.5 text-right text-muted">4</td>
-                </tr>
+                {findingsList.map((f, i) => (
+                  <tr key={f.id} className="hover:bg-surface-alt/40 cursor-pointer" onClick={() => navigate(`/findings?id=${f.id}`)}>
+                    <td className="py-2.5 text-danger font-bold">{i + 1}</td>
+                    <td className="py-2.5 text-fg truncate max-w-[220px]" title={f.affectedNodes?.join(' → ')}>
+                      Client → {f.affectedNodes?.map((n) => n.split(':').pop()).join(' → ') || f.type}
+                    </td>
+                    <td className="py-2.5">
+                      <span className="rounded bg-danger/20 text-danger px-1.5 py-0.2 text-[10px] font-bold capitalize">
+                        {f.severity}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-right text-muted">{(f.affectedNodes?.length || 1) + 1}</td>
+                  </tr>
+                ))}
+                {findingsList.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-muted text-xs">
+                      No attack paths identified yet. Run a verification agent to trace paths.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

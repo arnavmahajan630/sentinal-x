@@ -185,16 +185,51 @@ export class GeminiProvider implements LlmProvider {
     if (opts?.maxTokens !== undefined) gen.maxOutputTokens = opts.maxTokens;
     if (Object.keys(gen).length) body.generationConfig = gen;
 
-    const res = await this.fetchImpl(`${API}/${this.cfg.model}:generateContent`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': this.cfg.apiKey },
-      body: JSON.stringify(body),
-      signal: opts?.signal,
-    });
-    const json: any = await res.json().catch(() => ({}));
-    if (!res.ok)
+    const maxRetries = 3;
+    let attempt = 0;
+
+    while (true) {
+      const res = await this.fetchImpl(`${API}/${this.cfg.model}:generateContent`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': this.cfg.apiKey },
+        body: JSON.stringify(body),
+        signal: opts?.signal,
+      });
+      const json: any = await res.json().catch(() => ({}));
+      if (res.ok) {
+        return fromGeminiResponse(json);
+      }
+
+      attempt++;
+      const isRateLimit = res.status === 429;
+      const isTransient = res.status === 503 || res.status === 500;
+
+      if ((isRateLimit || isTransient) && attempt <= maxRetries && !opts?.signal?.aborted) {
+        let waitMs = 3000 * attempt;
+        // Parse "Please retry in Xs / ms" from error message or Retry-After header
+        const retryAfter = res.headers.get('retry-after');
+        if (retryAfter) {
+          const parsed = parseFloat(retryAfter);
+          if (!isNaN(parsed)) waitMs = Math.ceil(parsed * 1000) + 500;
+        } else if (typeof json?.error?.message === 'string') {
+          const match = json.error.message.match(/retry in\s+([0-9.]+)\s*(ms|s|m)/i);
+          if (match) {
+            const val = parseFloat(match[1]);
+            const unit = match[2].toLowerCase();
+            if (unit === 'ms') waitMs = Math.ceil(val) + 200;
+            else if (unit === 's') waitMs = Math.ceil(val * 1000) + 1000;
+            else if (unit === 'm') waitMs = Math.ceil(val * 60 * 1000) + 1000;
+          }
+        }
+        // Cap wait time to 60s
+        waitMs = Math.min(waitMs, 60000);
+        console.warn(`[GeminiProvider] Received HTTP ${res.status}. Backing off for ${waitMs}ms before retry (attempt ${attempt}/${maxRetries})...`);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+        continue;
+      }
+
       throw new Error(`Gemini API ${res.status}: ${json?.error?.message ?? res.statusText}`);
-    return fromGeminiResponse(json);
+    }
   }
 }
 
