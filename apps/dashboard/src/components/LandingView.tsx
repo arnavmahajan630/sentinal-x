@@ -2,7 +2,6 @@ import { useState, useMemo, useEffect } from 'react';
 import {
   Folder,
   Github,
-  Search,
   ArrowRight,
   Sun,
   Moon,
@@ -38,8 +37,7 @@ export function LandingView() {
   const { allProjects, selectProject, loadProjectFromPath, cloneProject, deleteProjectById, isLoading } = useProject();
   const { theme, toggleTheme } = useTheme();
 
-  // Filter & Search states
-  const [searchFilter, setSearchFilter] = useState('');
+  // Filter & View states
   const [filterType, setFilterType] = useState<'all' | 'github' | 'local'>('all');
   const [sortBy, setSortBy] = useState<'last-analyzed' | 'name' | 'findings'>('last-analyzed');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -168,13 +166,6 @@ export function LandingView() {
   const filteredProjects = useMemo(() => {
     return allProjects
       .filter((p) => {
-        const matchesSearch =
-          p.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-          p.path.toLowerCase().includes(searchFilter.toLowerCase()) ||
-          (p.description && p.description.toLowerCase().includes(searchFilter.toLowerCase())) ||
-          (p.tags && p.tags.some((t) => t.toLowerCase().includes(searchFilter.toLowerCase())));
-
-        if (!matchesSearch) return false;
         if (filterType === 'github') return p.type === 'github';
         if (filterType === 'local') return p.type === 'local';
         return true;
@@ -192,7 +183,7 @@ export function LandingView() {
         }
         return 0; // last-analyzed order preserved
       });
-  }, [allProjects, searchFilter, filterType, sortBy, starredIds]);
+  }, [allProjects, filterType, sortBy, starredIds]);
 
   const githubCount = allProjects.filter((p) => p.type === 'github').length;
   const localCount = allProjects.filter((p) => p.type === 'local').length;
@@ -215,50 +206,16 @@ export function LandingView() {
             </div>
           </div>
 
-          {/* Center: Search projects input with ⌘K badge */}
-          <div className="relative hidden md:block max-w-md w-full">
-            <Search className="absolute left-3.5 top-2.5 size-4 text-muted pointer-events-none" />
-            <input
-              type="text"
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              placeholder="Search projects by name, path, or framework..."
-              className="w-full rounded-xl border border-border/80 bg-surface-alt/50 py-2 pl-10 pr-10 text-xs text-fg placeholder:text-muted/60 focus:border-primary/80 focus:bg-surface-alt/90 focus:outline-none transition-all"
-            />
-            <span className="absolute right-3 top-2.5 rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-mono font-medium text-muted">
-              ⌘K
-            </span>
-          </div>
-
-          {/* Right: System Ready, Theme Toggle, AM Avatar, Quote */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400">
-              <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>System Ready</span>
-            </div>
-
+          {/* Right: Theme Toggle Only */}
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={toggleTheme}
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-              className="grid size-9 place-items-center rounded-xl border border-border bg-surface-alt/50 text-muted transition-colors hover:bg-surface-alt hover:text-fg"
+              className="grid size-9 place-items-center rounded-xl border border-border bg-surface-alt/50 text-muted transition-colors hover:bg-surface-alt hover:text-fg cursor-pointer"
             >
               {theme === 'dark' ? <Moon className="size-4" /> : <Sun className="size-4" />}
             </button>
-
-            <div
-              className="grid size-9 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-xs font-bold text-white shadow-sm"
-              title="Admin User"
-            >
-              AM
-            </div>
-
-            <div className="hidden xl:block max-w-[200px] border-l border-border pl-4 text-right">
-              <p className="text-[11px] italic text-muted leading-tight">
-                “Analyze. Understand. Verify. Track.”
-              </p>
-              <p className="text-[10px] text-muted/60 mt-0.5">— Sentinel-X</p>
-            </div>
           </div>
         </div>
       </header>
@@ -416,20 +373,8 @@ export function LandingView() {
             </button>
           </div>
 
-          {/* Search, Sort Dropdown & View Mode */}
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Embedded input for mobile */}
-            <div className="relative md:hidden w-full">
-              <Search className="absolute left-3.5 top-2.5 size-4 text-muted pointer-events-none" />
-              <input
-                type="text"
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                placeholder="Search projects..."
-                className="w-full rounded-xl border border-border/80 bg-surface-alt/50 py-2 pl-10 pr-4 text-xs text-fg placeholder:text-muted/60 focus:border-primary focus:outline-none"
-              />
-            </div>
-
+          {/* Sort Dropdown & View Mode */}
+          <div className="flex items-center gap-3">
             {/* Sort Dropdown */}
             <div className="relative">
               <select
