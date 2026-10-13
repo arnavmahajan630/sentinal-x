@@ -172,12 +172,35 @@ export function createApiRouter(cfg: Config): Router {
         return res.status(400).json({ error: 'Missing path parameter' });
       }
 
-      const resolved = path.resolve(rawPath);
-      if (!fs.existsSync(resolved)) {
-        return res.status(404).json({ error: `Path does not exist: ${resolved}` });
+      let resolved: string | null = null;
+      const candidates = [
+        rawPath,
+        path.resolve(rawPath),
+        path.resolve(process.cwd(), rawPath),
+        path.resolve('/app', rawPath),
+        path.resolve('/workspace', rawPath),
+        path.join('/workspace', rawPath),
+      ];
+
+      if (rawPath.includes('vuln-mern') || rawPath.includes('sandbox-target')) {
+        candidates.unshift('/app/sandbox-target');
+        candidates.unshift('/workspace/packages/engine/test/fixtures/vuln-mern');
+        candidates.unshift(path.resolve(process.cwd(), 'packages/engine/test/fixtures/vuln-mern'));
       }
-      if (!fs.statSync(resolved).isDirectory()) {
-        return res.status(400).json({ error: `Path is not a directory: ${resolved}` });
+
+      for (const c of candidates) {
+        if (c && fs.existsSync(c)) {
+          try {
+            if (fs.statSync(c).isDirectory()) {
+              resolved = c;
+              break;
+            }
+          } catch {}
+        }
+      }
+
+      if (!resolved) {
+        return res.status(404).json({ error: `Path does not exist: ${rawPath}` });
       }
 
       const idxResult = await indexProject(resolved, { force: Boolean(force) });
@@ -301,7 +324,14 @@ export function createApiRouter(cfg: Config): Router {
   router.get('/fs/browse', async (req, res) => {
     try {
       const rawDir = req.query.dir as string | undefined;
-      const targetDir = rawDir ? path.resolve(rawDir) : process.cwd();
+      let targetDir = rawDir ? path.resolve(rawDir) : process.cwd();
+      if (!fs.existsSync(targetDir) && rawDir) {
+        if (fs.existsSync(path.resolve('/workspace', rawDir))) {
+          targetDir = path.resolve('/workspace', rawDir);
+        } else if (fs.existsSync(path.resolve('/app', rawDir))) {
+          targetDir = path.resolve('/app', rawDir);
+        }
+      }
 
       if (!fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) {
         return res.status(404).json({ error: 'Directory not found' });
@@ -355,6 +385,65 @@ export function createApiRouter(cfg: Config): Router {
       res.status(500).json({ error: err.message });
     }
   });
+
+  // Un-index and remove a specific project from database
+  const deleteProjectHandler = async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      if (!id) {
+        return res.status(400).json({ error: 'Missing project ID parameter' });
+      }
+
+      const proj = await models.projects.findOne({
+        $or: [{ projectId: id }, { name: id }],
+      }).lean();
+
+      if (!proj) {
+        return res.status(404).json({ error: `Project not found: ${id}` });
+      }
+
+      const targetProjectId = (proj as any).projectId;
+
+      // Stop file watcher if active
+      if (activeWatchers.has(targetProjectId)) {
+        try {
+          const watcher = activeWatchers.get(targetProjectId);
+          watcher?.stop();
+          activeWatchers.delete(targetProjectId);
+        } catch (e) {
+          console.warn(`Error stopping watcher for ${targetProjectId}:`, e);
+        }
+      }
+
+      // Remove all records related to targetProjectId across all collections
+      await Promise.all([
+        models.projects.deleteOne({ projectId: targetProjectId }),
+        models.files.deleteMany({ projectId: targetProjectId }),
+        models.graph_nodes.deleteMany({ projectId: targetProjectId }),
+        models.graph_edges.deleteMany({ projectId: targetProjectId }),
+        models.findings.deleteMany({ projectId: targetProjectId }),
+        models.agent_runs.deleteMany({ projectId: targetProjectId }),
+        models.agent_steps.deleteMany({ projectId: targetProjectId }),
+        models.tool_calls.deleteMany({ projectId: targetProjectId }),
+        models.observations.deleteMany({ projectId: targetProjectId }),
+        models.hypotheses.deleteMany({ projectId: targetProjectId }),
+        models.verification_runs.deleteMany({ projectId: targetProjectId }),
+        models.security_events.deleteMany({ projectId: targetProjectId }),
+        models.change_sets.deleteMany({ projectId: targetProjectId }),
+      ]);
+
+      res.json({
+        success: true,
+        message: `Project ${targetProjectId} (${(proj as any).name || ''}) un-indexed and removed from database`,
+        projectId: targetProjectId,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  };
+
+  router.delete('/project/:id', deleteProjectHandler);
+  router.delete('/projects/:id', deleteProjectHandler);
 
   // ──────────────────────────────────────────────────────────────────────────
   // 2. Overview & System Posture

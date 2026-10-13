@@ -284,6 +284,17 @@ export async function resetAllProjects(): Promise<any> {
   return res.json();
 }
 
+export async function deleteProject(projectId: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/project/${encodeURIComponent(projectId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to un-index project');
+  }
+  return res.json();
+}
+
 export async function fetchOverview(projectId: string): Promise<OverviewData> {
   const res = await fetch(`${API_BASE}/api/overview?projectId=${encodeURIComponent(projectId)}`);
   if (!res.ok) throw new Error('Failed to fetch overview');

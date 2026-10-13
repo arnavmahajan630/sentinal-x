@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { fetchProjects, loadLocalProject, cloneGitProject, triggerAssessment } from '@/lib/api';
+import { fetchProjects, loadLocalProject, cloneGitProject, triggerAssessment, deleteProject } from '@/lib/api';
 import type { Project } from '@/lib/api';
 
 interface ProjectContextType {
@@ -14,6 +14,7 @@ interface ProjectContextType {
   clearProject: () => void;
   loadProjectFromPath: (path: string, name?: string) => Promise<any>;
   cloneProject: (gitUrl: string, name?: string, branch?: string) => Promise<any>;
+  deleteProjectById: (projectId: string) => Promise<any>;
   runAnalysis: () => Promise<void>;
   reloadProjects: () => Promise<Project[]>;
 }
@@ -29,6 +30,7 @@ const ProjectContext = createContext<ProjectContextType>({
   clearProject: () => {},
   loadProjectFromPath: async () => {},
   cloneProject: async () => {},
+  deleteProjectById: async () => {},
   runAnalysis: async () => {},
   reloadProjects: async () => [],
 });
@@ -124,6 +126,20 @@ export function ProjectProvider({
     }
   };
 
+  const deleteProjectById = async (id: string) => {
+    setIsLoading(true);
+    try {
+      const res = await deleteProject(id);
+      if (activeProject && (activeProject.projectId === id || activeProject.name === id)) {
+        clearProject();
+      }
+      await reloadProjects();
+      return res;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const runAnalysis = async () => {
     if (!activeProject) return;
     setIsAnalyzing(true);
@@ -151,6 +167,7 @@ export function ProjectProvider({
         clearProject,
         loadProjectFromPath,
         cloneProject,
+        deleteProjectById,
         runAnalysis,
         reloadProjects,
       }}

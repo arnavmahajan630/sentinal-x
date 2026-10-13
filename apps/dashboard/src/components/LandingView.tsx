@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Folder,
   Github,
@@ -18,6 +18,9 @@ import {
   FolderPlus,
   Play,
   RotateCcw,
+  Trash2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -28,10 +31,11 @@ import { IndexingProgressModal, IndexingStats } from './IndexingProgressModal';
 import { GitHubConnectModal } from './GitHubConnectModal';
 import { GitUrlModal } from './GitUrlModal';
 import { LocalFolderModal } from './LocalFolderModal';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
 export function LandingView() {
   const navigate = useNavigate();
-  const { allProjects, selectProject, loadProjectFromPath, cloneProject, isLoading } = useProject();
+  const { allProjects, selectProject, loadProjectFromPath, cloneProject, deleteProjectById, isLoading } = useProject();
   const { theme, toggleTheme } = useTheme();
 
   // Filter & Search states
@@ -53,6 +57,19 @@ export function LandingView() {
   const [indexingError, setIndexingError] = useState<string | null>(null);
   const [indexingStats, setIndexingStats] = useState<IndexingStats | null>(null);
   const [indexedProject, setIndexedProject] = useState<Project | null>(null);
+
+  // Three-dots menu and delete modal state
+  const [activeMenuProjectId, setActiveMenuProjectId] = useState<string | null>(null);
+  const [deleteTargetProject, setDeleteTargetProject] = useState<Project | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Click-outside listener to close the three-dots dropdown
+  useEffect(() => {
+    if (!activeMenuProjectId) return;
+    const handleDocumentClick = () => setActiveMenuProjectId(null);
+    window.addEventListener('click', handleDocumentClick);
+    return () => window.removeEventListener('click', handleDocumentClick);
+  }, [activeMenuProjectId]);
 
   // Starred projects persistence
   const [starredIds, setStarredIds] = useState<Record<string, boolean>>(() => {
@@ -593,12 +610,67 @@ export function LandingView() {
                         <ArrowRight className="size-3.5" />
                       </button>
 
-                      <button
-                        type="button"
-                        className="grid size-8 place-items-center rounded-xl border border-border/80 bg-surface-alt/50 text-muted hover:text-fg hover:bg-surface-alt transition-colors shrink-0"
-                      >
-                        <MoreHorizontal className="size-4" />
-                      </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMenuProjectId((prev) => (prev === project.projectId ? null : project.projectId));
+                          }}
+                          className={cn(
+                            'grid size-8 place-items-center rounded-xl border border-border/80 bg-surface-alt/50 text-muted hover:text-fg hover:bg-surface-alt transition-colors shrink-0 cursor-pointer',
+                            activeMenuProjectId === project.projectId && 'bg-surface-alt text-fg border-primary/50',
+                          )}
+                          title="More options"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </button>
+
+                        {/* Dropdown Menu */}
+                        {activeMenuProjectId === project.projectId && (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute right-0 bottom-full mb-2 w-44 rounded-xl border border-border/90 bg-surface p-1.5 shadow-2xl z-30 space-y-0.5 animate-in fade-in zoom-in-95 duration-150"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(project.path);
+                                setCopiedId(project.projectId);
+                                setTimeout(() => setCopiedId(null), 1500);
+                                setActiveMenuProjectId(null);
+                              }}
+                              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-fg hover:bg-surface-alt transition-colors cursor-pointer text-left"
+                            >
+                              {copiedId === project.projectId ? (
+                                <>
+                                  <Check className="size-3.5 text-emerald-400" />
+                                  <span className="text-emerald-400 font-medium">Path Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="size-3.5 text-muted" />
+                                  <span>Copy Path</span>
+                                </>
+                              )}
+                            </button>
+
+                            <div className="h-px bg-border/60 my-0.5" />
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMenuProjectId(null);
+                                setDeleteTargetProject(project);
+                              }}
+                              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-danger hover:bg-danger/10 transition-colors cursor-pointer text-left font-medium"
+                            >
+                              <Trash2 className="size-3.5" />
+                              <span>Un-index Project</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -642,6 +714,17 @@ export function LandingView() {
           handleSelectProject(p);
         }}
         onClose={() => setIndexingModalOpen(false)}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={Boolean(deleteTargetProject)}
+        project={deleteTargetProject}
+        onClose={() => setDeleteTargetProject(null)}
+        onConfirm={async () => {
+          if (deleteTargetProject) {
+            await deleteProjectById(deleteTargetProject.projectId);
+          }
+        }}
       />
     </div>
   );

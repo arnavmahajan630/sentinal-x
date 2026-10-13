@@ -70,7 +70,7 @@ export function GitHubConnectModal({ isOpen, onClose, onImportRepo }: GitHubConn
       description: 'Deliberately vulnerable MERN application for security research and automated verification.',
       stars: 42,
       tags: ['Express', 'React', 'Node.js', 'MongoDB'],
-      path: 'packages/engine/test/fixtures/vuln-mern',
+      path: '/app/sandbox-target',
     },
     {
       name: 'mern-auth-service',
@@ -78,7 +78,7 @@ export function GitHubConnectModal({ isOpen, onClose, onImportRepo }: GitHubConn
       description: 'Authentication microservice with JWT tokens, role middleware, and MongoDB.',
       stars: 18,
       tags: ['Express', 'TypeScript', 'MongoDB'],
-      path: 'packages/engine/test/fixtures/vuln-mern',
+      path: '/app/sandbox-target',
     },
     {
       name: 'ecommerce-platform',
@@ -86,7 +86,7 @@ export function GitHubConnectModal({ isOpen, onClose, onImportRepo }: GitHubConn
       description: 'Modular shopping cart and order processing backend with Mongoose schemas.',
       stars: 27,
       tags: ['Express', 'React', 'MongoDB'],
-      path: 'packages/engine/test/fixtures/vuln-mern',
+      path: '/app/sandbox-target',
     },
   ];
 

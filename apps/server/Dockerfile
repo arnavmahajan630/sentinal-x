@@ -22,6 +22,7 @@ RUN npm ci --omit=dev --workspace @sentinelx/server --include-workspace-root=fal
 COPY --from=build /app/apps/server/dist apps/server/dist
 COPY sandbox sandbox
 COPY --from=build /app/packages/engine/test/fixtures/vuln-mern /app/sandbox-target
+RUN mkdir -p /app/packages/engine/test/fixtures && ln -s /app/sandbox-target /app/packages/engine/test/fixtures/vuln-mern
 COPY playbooks playbooks
 EXPOSE 4000
 CMD ["node", "apps/server/dist/index.js"]

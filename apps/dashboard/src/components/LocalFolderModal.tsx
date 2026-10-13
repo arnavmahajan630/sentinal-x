@@ -20,7 +20,7 @@ interface LocalFolderModalProps {
 }
 
 export function LocalFolderModal({ isOpen, onClose, onSubmit }: LocalFolderModalProps) {
-  const [inputPath, setInputPath] = useState('packages/engine/test/fixtures/vuln-mern');
+  const [inputPath, setInputPath] = useState('/app/sandbox-target');
   const [projectName, setProjectName] = useState('vulnerable-mern-app');
   const [showBrowser, setShowBrowser] = useState(false);
   const [browserLoading, setBrowserLoading] = useState(false);
@@ -187,17 +187,30 @@ export function LocalFolderModal({ isOpen, onClose, onSubmit }: LocalFolderModal
 
           {/* Quick preset */}
           <div className="rounded-xl border border-border/70 bg-surface-alt/40 p-3 text-xs text-muted flex items-center justify-between">
-            <span>Sample Target App:</span>
-            <button
-              type="button"
-              onClick={() => {
-                setInputPath('packages/engine/test/fixtures/vuln-mern');
-                setProjectName('vulnerable-mern-app');
-              }}
-              className="font-mono text-primary hover:underline text-[11px]"
-            >
-              vulnerable-mern-app fixture
-            </button>
+            <span>Sample Target:</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setInputPath('/app/sandbox-target');
+                  setProjectName('vulnerable-mern-app');
+                }}
+                className="font-mono text-primary hover:underline text-[11px]"
+              >
+                /app/sandbox-target
+              </button>
+              <span className="text-muted/60">·</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setInputPath('packages/engine/test/fixtures/vuln-mern');
+                  setProjectName('vulnerable-mern-app');
+                }}
+                className="font-mono text-primary hover:underline text-[11px]"
+              >
+                vuln-mern fixture
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-border/80">
