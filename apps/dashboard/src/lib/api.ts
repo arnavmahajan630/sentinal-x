@@ -22,6 +22,7 @@ export interface Project {
   path: string;
   gitHead?: string;
   gitBranch?: string;
+  gitUrl?: string;
   status: string;
   stats?: {
     files: number;
@@ -31,6 +32,16 @@ export interface Project {
     models: number;
   };
   indexedAt?: string;
+  findingsCount?: number;
+  criticalCount?: number;
+  highCount?: number;
+  mediumCount?: number;
+  lowCount?: number;
+  hasBeenRun?: boolean;
+  analyzedAgo?: string;
+  type?: 'github' | 'local';
+  tags?: string[];
+  description?: string;
 }
 
 export interface OverviewData {
@@ -227,16 +238,49 @@ export async function fetchProject(projectId?: string): Promise<Project> {
   return res.json();
 }
 
-export async function loadLocalProject(path: string, force = false): Promise<any> {
+export async function loadLocalProject(path: string, name?: string, force = false): Promise<any> {
   const res = await fetch(`${API_BASE}/api/project/load`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path, force }),
+    body: JSON.stringify({ path, name, force }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'Failed to load project');
   }
+  return res.json();
+}
+
+export async function cloneGitProject(gitUrl: string, name?: string, branch?: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/project/clone`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ gitUrl, name, branch }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to clone repository');
+  }
+  return res.json();
+}
+
+export async function browseLocalDirectory(dir?: string): Promise<{
+  current: string;
+  parent: string | null;
+  directories: Array<{ name: string; path: string; hasPackageJson: boolean; isGit: boolean }>;
+}> {
+  const url = dir ? `${API_BASE}/api/fs/browse?dir=${encodeURIComponent(dir)}` : `${API_BASE}/api/fs/browse`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to browse directory');
+  }
+  return res.json();
+}
+
+export async function resetAllProjects(): Promise<any> {
+  const res = await fetch(`${API_BASE}/api/projects/reset`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to reset projects');
   return res.json();
 }
 
@@ -246,14 +290,16 @@ export async function fetchOverview(projectId: string): Promise<OverviewData> {
   return res.json();
 }
 
-export async function fetchRoutes(projectId: string): Promise<{ routes: RouteItem[]; gaps: any[]; assetsCount: number }> {
-  const res = await fetch(`${API_BASE}/api/routes?projectId=${encodeURIComponent(projectId)}`);
+export async function fetchRoutes(projectId?: string): Promise<{ routes: RouteItem[]; gaps: any[]; assetsCount: number }> {
+  const url = projectId ? `${API_BASE}/api/routes?projectId=${encodeURIComponent(projectId)}` : `${API_BASE}/api/routes`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch routes');
   return res.json();
 }
 
-export async function fetchGraph(projectId: string, filter?: string, route?: string, finding?: string): Promise<GraphData> {
-  const params = new URLSearchParams({ projectId });
+export async function fetchGraph(projectId?: string, filter?: string, route?: string, finding?: string): Promise<GraphData> {
+  const params = new URLSearchParams();
+  if (projectId) params.set('projectId', projectId);
   if (filter) params.set('filter', filter);
   if (route) params.set('route', route);
   if (finding) params.set('finding', finding);
@@ -263,8 +309,9 @@ export async function fetchGraph(projectId: string, filter?: string, route?: str
   return res.json();
 }
 
-export async function fetchFindings(projectId: string, status?: string, severity?: string): Promise<Finding[]> {
-  const params = new URLSearchParams({ projectId });
+export async function fetchFindings(projectId?: string, status?: string, severity?: string): Promise<Finding[]> {
+  const params = new URLSearchParams();
+  if (projectId) params.set('projectId', projectId);
   if (status) params.set('status', status);
   if (severity) params.set('severity', severity);
 
@@ -279,8 +326,9 @@ export async function fetchFinding(id: string): Promise<Finding> {
   return res.json();
 }
 
-export async function fetchVerifications(projectId: string): Promise<VerificationRun[]> {
-  const res = await fetch(`${API_BASE}/api/verifications?projectId=${encodeURIComponent(projectId)}`);
+export async function fetchVerifications(projectId?: string): Promise<VerificationRun[]> {
+  const url = projectId ? `${API_BASE}/api/verifications?projectId=${encodeURIComponent(projectId)}` : `${API_BASE}/api/verifications`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch verifications');
   return res.json();
 }

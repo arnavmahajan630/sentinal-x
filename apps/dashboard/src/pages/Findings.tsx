@@ -27,24 +27,24 @@ import {
   Check,
   Shield,
   Layers,
+  Loader2,
 } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
 import { fetchFindings, triggerVerification } from '@/lib/api';
 import type { Finding } from '@/lib/api';
-import { DEMO_FINDINGS } from '@/lib/mockData';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/PageHeader';
 
 export function Findings() {
   const navigate = useNavigate();
-  const { activeProject } = useProject();
+  const { activeProject, runAnalysis, isAnalyzing } = useProject();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRisk, setSelectedRisk] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'list' | 'table'>('list');
-  const [selectedFindingId, setSelectedFindingId] = useState<string>('F-0012');
+  const [selectedFindingId, setSelectedFindingId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'overview' | 'evidence' | 'fix' | 'agent' | 'references'>('overview');
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedPayload, setCopiedPayload] = useState(false);
@@ -59,13 +59,39 @@ export function Findings() {
   });
 
   const findingsList = useMemo<Finding[]>(() => {
-    if (Array.isArray(findingsData) && findingsData.length > 0) return findingsData;
-    return DEMO_FINDINGS;
+    if (Array.isArray(findingsData)) return findingsData;
+    return [];
   }, [findingsData]);
 
+  const counts = useMemo(() => {
+    return {
+      critical: findingsList.filter((f) => f.severity === 'critical').length,
+      high: findingsList.filter((f) => f.severity === 'high').length,
+      medium: findingsList.filter((f) => f.severity === 'medium').length,
+      low: findingsList.filter((f) => f.severity === 'low').length,
+      info: findingsList.filter((f) => f.severity === 'info').length,
+      total: findingsList.length,
+    };
+  }, [findingsList]);
+
+  const filteredFindings = useMemo(() => {
+    return findingsList.filter((f) => {
+      const matchesSearch =
+        f.type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        f.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (f.affectedNodes && f.affectedNodes.some((n) => n.toLowerCase().includes(searchTerm.toLowerCase())));
+
+      if (!matchesSearch) return false;
+      if (selectedRisk !== 'all' && f.severity?.toLowerCase() !== selectedRisk.toLowerCase()) return false;
+      if (selectedStatus !== 'all' && f.status?.toLowerCase() !== selectedStatus.toLowerCase()) return false;
+      return true;
+    });
+  }, [findingsList, searchTerm, selectedRisk, selectedStatus]);
+
   const selectedFinding = useMemo(() => {
-    return findingsList.find((f) => f.id === selectedFindingId) || findingsList[0] || DEMO_FINDINGS[0];
-  }, [findingsList, selectedFindingId]);
+    if (filteredFindings.length === 0) return null;
+    return filteredFindings.find((f) => f.id === selectedFindingId) || filteredFindings[0];
+  }, [filteredFindings, selectedFindingId]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(`const user = await User.findOne({\n  username: req.body.username,\n  password: req.body.password\n});\nif (user) {\n  // proceed with login\n}`);
@@ -127,7 +153,7 @@ export function Findings() {
               <ShieldAlert className="size-5" />
             </div>
             <div>
-              <div className="text-2xl font-extrabold text-fg">7</div>
+              <div className="text-2xl font-extrabold text-fg">{counts.critical}</div>
               <div className="text-xs text-muted font-medium">Critical</div>
             </div>
           </div>
@@ -138,7 +164,7 @@ export function Findings() {
               <Shield className="size-5" />
             </div>
             <div>
-              <div className="text-2xl font-extrabold text-fg">18</div>
+              <div className="text-2xl font-extrabold text-fg">{counts.high}</div>
               <div className="text-xs text-muted font-medium">High</div>
             </div>
           </div>
@@ -149,7 +175,7 @@ export function Findings() {
               <AlertTriangle className="size-5" />
             </div>
             <div>
-              <div className="text-2xl font-extrabold text-fg">24</div>
+              <div className="text-2xl font-extrabold text-fg">{counts.medium}</div>
               <div className="text-xs text-muted font-medium">Medium</div>
             </div>
           </div>
@@ -160,7 +186,7 @@ export function Findings() {
               <ShieldCheck className="size-5" />
             </div>
             <div>
-              <div className="text-2xl font-extrabold text-fg">12</div>
+              <div className="text-2xl font-extrabold text-fg">{counts.low}</div>
               <div className="text-xs text-muted font-medium">Low</div>
             </div>
           </div>
@@ -171,7 +197,7 @@ export function Findings() {
               <FileCode className="size-5" />
             </div>
             <div>
-              <div className="text-2xl font-extrabold text-fg">36</div>
+              <div className="text-2xl font-extrabold text-fg">{counts.info}</div>
               <div className="text-xs text-muted font-medium">Informational</div>
             </div>
           </div>
@@ -184,65 +210,59 @@ export function Findings() {
             <div className="relative grid size-24 place-items-center">
               <svg className="size-full -rotate-90" viewBox="0 0 36 36">
                 <circle cx="18" cy="18" r="14" fill="none" stroke="#1a273e" strokeWidth="4" />
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="14"
-                  fill="none"
-                  stroke="#ef4444"
-                  strokeWidth="4"
-                  strokeDasharray="10 100"
-                  strokeDashoffset="0"
-                />
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="14"
-                  fill="none"
-                  stroke="#f59e0b"
-                  strokeWidth="4"
-                  strokeDasharray="20 100"
-                  strokeDashoffset="-10"
-                />
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="14"
-                  fill="none"
-                  stroke="#eab308"
-                  strokeWidth="4"
-                  strokeDasharray="25 100"
-                  strokeDashoffset="-30"
-                />
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="14"
-                  fill="none"
-                  stroke="#38bdf8"
-                  strokeWidth="4"
-                  strokeDasharray="15 100"
-                  strokeDashoffset="-55"
-                />
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="14"
-                  fill="none"
-                  stroke="#64748b"
-                  strokeWidth="4"
-                  strokeDasharray="30 100"
-                  strokeDashoffset="-70"
-                />
+                {counts.total > 0 && (
+                  <>
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#ef4444"
+                      strokeWidth="4"
+                      strokeDasharray={`${Math.round((counts.critical / counts.total) * 88)} 100`}
+                      strokeDashoffset="0"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="4"
+                      strokeDasharray={`${Math.round((counts.high / counts.total) * 88)} 100`}
+                      strokeDashoffset={`-${Math.round((counts.critical / counts.total) * 88)}`}
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#eab308"
+                      strokeWidth="4"
+                      strokeDasharray={`${Math.round((counts.medium / counts.total) * 88)} 100`}
+                      strokeDashoffset={`-${Math.round(((counts.critical + counts.high) / counts.total) * 88)}`}
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth="4"
+                      strokeDasharray={`${Math.round((counts.low / counts.total) * 88)} 100`}
+                      strokeDashoffset={`-${Math.round(((counts.critical + counts.high + counts.medium) / counts.total) * 88)}`}
+                    />
+                  </>
+                )}
               </svg>
               <div className="absolute text-center">
-                <div className="text-xl font-extrabold text-fg">97</div>
+                <div className="text-xl font-extrabold text-fg">{counts.total}</div>
                 <div className="text-[9px] uppercase font-bold text-muted">Total</div>
               </div>
             </div>
 
             <div className="text-xs">
-              <div className="font-bold text-fg">97</div>
+              <div className="font-bold text-fg">{counts.total}</div>
               <div className="text-[11px] text-muted">Total Findings</div>
             </div>
           </div>
@@ -251,27 +271,27 @@ export function Findings() {
           <div className="space-y-1 text-[11px] pr-2">
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-danger" />
-              <span className="font-bold text-fg">7</span>
+              <span className="font-bold text-fg">{counts.critical}</span>
               <span className="text-muted">Critical</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-amber-400" />
-              <span className="font-bold text-fg">18</span>
+              <span className="font-bold text-fg">{counts.high}</span>
               <span className="text-muted">High</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-yellow-400" />
-              <span className="font-bold text-fg">24</span>
+              <span className="font-bold text-fg">{counts.medium}</span>
               <span className="text-muted">Medium</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-blue-400" />
-              <span className="font-bold text-fg">12</span>
+              <span className="font-bold text-fg">{counts.low}</span>
               <span className="text-muted">Low</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-slate-400" />
-              <span className="font-bold text-fg">36</span>
+              <span className="font-bold text-fg">{counts.info}</span>
               <span className="text-muted">Info</span>
             </div>
           </div>
@@ -405,7 +425,7 @@ export function Findings() {
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-fg text-sm">Findings</h3>
               <span className="rounded-full bg-surface-alt border border-border/70 px-2 py-0.2 text-[11px] font-mono text-muted">
-                97
+                {filteredFindings.length}
               </span>
             </div>
 
@@ -419,179 +439,90 @@ export function Findings() {
             </div>
           </div>
 
-          {/* List items (matching images/findings.png) */}
+          {/* List items */}
           <div className="space-y-1.5 max-h-[640px] overflow-y-auto pr-1">
-            {[
-              {
-                id: 'F-0012',
-                severity: 'Critical',
-                title: 'NoSQL Injection in User Login',
-                endpoint: 'POST /api/auth/login',
-                tag: 'Injection',
-                status: 'Open',
-                time: '2h ago',
-              },
-              {
-                id: 'F-0011',
-                severity: 'Critical',
-                title: 'Insecure Direct Object Reference (IDOR)',
-                endpoint: 'GET /api/users/:id',
-                tag: 'Access Control',
-                status: 'Open',
-                time: '3h ago',
-              },
-              {
-                id: 'F-0010',
-                severity: 'Critical',
-                title: 'Hardcoded JWT Secret',
-                endpoint: 'config/jwt.js',
-                tag: 'Secrets',
-                status: 'Open',
-                time: '5h ago',
-              },
-              {
-                id: 'F-0009',
-                severity: 'High',
-                title: 'Cross-Site Scripting (XSS)',
-                endpoint: 'GET /api/comments',
-                tag: 'XSS',
-                status: 'Open',
-                time: '6h ago',
-              },
-              {
-                id: 'F-0008',
-                severity: 'High',
-                title: 'Missing Authorization Middleware',
-                endpoint: 'POST /api/admin/*',
-                tag: 'Access Control',
-                status: 'Open',
-                time: '8h ago',
-              },
-              {
-                id: 'F-0007',
-                severity: 'High',
-                title: 'Insecure CORS Configuration',
-                endpoint: 'server.js',
-                tag: 'Configuration',
-                status: 'In Progress',
-                time: '10h ago',
-              },
-              {
-                id: 'F-0006',
-                severity: 'Medium',
-                title: 'Sensitive Data in Logs',
-                endpoint: 'utils/logger.js',
-                tag: 'Data Exposure',
-                status: 'Open',
-                time: '12h ago',
-              },
-              {
-                id: 'F-0005',
-                severity: 'Medium',
-                title: 'Unvalidated File Upload',
-                endpoint: 'POST /api/upload',
-                tag: 'File Upload',
-                status: 'Open',
-                time: '1d ago',
-              },
-              {
-                id: 'F-0004',
-                severity: 'Medium',
-                title: 'Outdated Dependency (express@4.17.1)',
-                endpoint: 'package.json',
-                tag: 'Dependency',
-                status: 'Open',
-                time: '1d ago',
-              },
-              {
-                id: 'F-0003',
-                severity: 'Low',
-                title: 'Missing Security Headers',
-                endpoint: 'server.js',
-                tag: 'Configuration',
-                status: 'Open',
-                time: '1d ago',
-              },
-              {
-                id: 'F-0002',
-                severity: 'Low',
-                title: 'Verbose Error Messages',
-                endpoint: 'errorHandler.js',
-                tag: 'Information Disclosure',
-                status: 'Open',
-                time: '2d ago',
-              },
-              {
-                id: 'F-0001',
-                severity: 'Info',
-                title: 'Debug Endpoint Enabled',
-                endpoint: 'GET /api/debug',
-                tag: 'Debug',
-                status: 'Open',
-                time: '2d ago',
-              },
-            ].map((f) => {
-              const isSelected = selectedFindingId === f.id;
-              return (
-                <div
-                  key={f.id}
-                  onClick={() => setSelectedFindingId(f.id)}
-                  className={cn(
-                    'group flex items-start gap-3 rounded-xl border p-3 transition-all cursor-pointer',
-                    isSelected
-                      ? 'border-primary/60 bg-primary/10 shadow-xs ring-1 ring-primary/40'
-                      : 'border-border/60 bg-surface/50 hover:bg-surface-alt/70',
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-1 size-3.5 rounded border-border bg-surface text-primary"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={cn(
-                          'rounded-md border px-2 py-0.2 text-[10px] font-bold uppercase tracking-wider',
-                          severityPill(f.severity),
-                        )}
-                      >
-                        {f.severity}
-                      </span>
-                      <h4 className="font-bold text-fg text-xs truncate group-hover:text-primary transition-colors">
-                        {f.title}
-                      </h4>
-                    </div>
-
-                    <div className="font-mono text-[11px] text-muted mt-1 truncate">
-                      {f.endpoint}
-                    </div>
-
-                    <div className="mt-2.5 flex items-center justify-between text-[10.5px]">
-                      <span className="rounded bg-surface-alt border border-border/60 px-1.5 py-0.2 text-muted">
-                        {f.tag}
-                      </span>
+            {filteredFindings.length === 0 ? (
+              <div className="py-12 px-4 text-center rounded-xl border border-dashed border-border/70 bg-surface/30">
+                <ShieldCheck className="mx-auto size-9 text-muted/60 mb-2" />
+                <h4 className="text-sm font-semibold text-fg">No findings recorded</h4>
+                <p className="text-xs text-muted mt-1 max-w-xs mx-auto">
+                  {activeProject?.hasBeenRun
+                    ? 'No security vulnerabilities were found matching your filters.'
+                    : 'This project has not been scanned yet. Run a verification in Verification or Overview to detect issues.'}
+                </p>
+              </div>
+            ) : (
+              filteredFindings.map((f) => {
+                const isSelected = selectedFindingId === f.id || (!selectedFindingId && selectedFinding?.id === f.id);
+                const findingEndpoint =
+                  f.evidence?.request && typeof f.evidence.request === 'object' && 'path' in f.evidence.request
+                    ? `${(f.evidence.request as any).method || ''} ${(f.evidence.request as any).path}`
+                    : f.affectedNodes?.[0] || 'Repository Code';
+                return (
+                  <div
+                    key={f.id}
+                    onClick={() => setSelectedFindingId(f.id)}
+                    className={cn(
+                      'group flex items-start gap-3 rounded-xl border p-3 transition-all cursor-pointer',
+                      isSelected
+                        ? 'border-primary/60 bg-primary/10 shadow-xs ring-1 ring-primary/40'
+                        : 'border-border/60 bg-surface/50 hover:bg-surface-alt/70',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-3.5 rounded border-border bg-surface text-primary"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span
                           className={cn(
-                            'rounded px-1.5 py-0.2 font-mono text-[10px]',
-                            f.status === 'In Progress'
-                              ? 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                              : 'bg-danger/10 text-danger border border-danger/20',
+                            'rounded-md border px-2 py-0.2 text-[10px] font-bold uppercase tracking-wider',
+                            severityPill(f.severity),
                           )}
                         >
-                          {f.status}
+                          {f.severity}
                         </span>
-                        <span className="font-mono text-muted">{f.time}</span>
+                        <h4 className="font-bold text-fg text-xs truncate group-hover:text-primary transition-colors">
+                          {f.type}
+                        </h4>
+                      </div>
+
+                      <div className="font-mono text-[11px] text-muted mt-1 truncate">
+                        {findingEndpoint}
+                      </div>
+
+                      <div className="mt-2.5 flex items-center justify-between text-[10.5px]">
+                        <span className="rounded bg-surface-alt border border-border/60 px-1.5 py-0.2 text-muted">
+                          {f.references?.owasp || 'Security Rule'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={cn(
+                              'rounded px-1.5 py-0.2 font-mono text-[10px] capitalize',
+                              f.status === 'resolved'
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : f.status === 'rejected'
+                                ? 'bg-surface-alt text-muted border border-border'
+                                : 'bg-danger/10 text-danger border border-danger/20',
+                            )}
+                          >
+                            {f.status}
+                          </span>
+                          <span className="font-mono text-muted">
+                            {f.createdAt ? new Date(f.createdAt).toLocaleDateString() : 'Recent'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
 
-          {/* Pagination (images/findings.png) */}
+          {/* Pagination */}
           <div className="flex items-center justify-between pt-3 border-t border-border/60 text-xs text-muted">
             <button
               type="button"
@@ -606,28 +537,14 @@ export function Findings() {
               <span className="grid size-6 place-items-center rounded bg-primary text-white font-bold">
                 1
               </span>
-              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
-                2
-              </span>
-              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
-                3
-              </span>
-              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
-                4
-              </span>
-              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
-                5
-              </span>
-              <span className="px-1 text-muted">...</span>
-              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
-                9
-              </span>
-              <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
-                10
-              </span>
+              {filteredFindings.length > 10 && (
+                <span className="grid size-6 place-items-center rounded hover:bg-surface-alt cursor-pointer">
+                  2
+                </span>
+              )}
             </div>
 
-            <button type="button" className="flex items-center gap-1 hover:text-fg cursor-pointer">
+            <button type="button" className="flex items-center gap-1 hover:text-fg cursor-pointer disabled:opacity-40" disabled={filteredFindings.length <= 10}>
               <span>Next</span>
               <ChevronRight className="size-3.5" />
             </button>
@@ -635,304 +552,300 @@ export function Findings() {
         </div>
 
         {/* ── RIGHT COLUMN: Finding Dossier (7 cols) ── */}
-        <div className="lg:col-span-7 rounded-2xl border border-border/80 bg-surface/90 p-5 shadow-xs space-y-5">
-          {/* Header */}
-          <div>
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1 rounded-md bg-danger/15 border border-danger/30 px-2.5 py-0.5 text-xs font-bold text-danger uppercase tracking-wider">
-                  <ShieldAlert className="size-3.5" />
-                  <span>Critical</span>
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => navigate('/graph')}
-                  className="flex items-center gap-1 rounded-lg border border-border bg-surface-alt/50 px-2.5 py-1 text-xs text-fg hover:bg-surface-alt"
-                >
-                  <ExternalLink className="size-3" />
-                  <span>Open in Graph</span>
-                </button>
-                <button
-                  type="button"
-                  className="grid size-7 place-items-center rounded-lg border border-border bg-surface-alt/50 text-muted hover:text-fg"
-                >
-                  <MoreHorizontal className="size-3.5" />
-                </button>
-              </div>
+        {!selectedFinding ? (
+          <div className="lg:col-span-7 rounded-2xl border border-border/80 bg-surface/90 p-12 shadow-xs text-center flex flex-col items-center justify-center min-h-[460px]">
+            <div className="grid size-14 place-items-center rounded-2xl bg-surface-alt border border-border text-muted mb-4">
+              <ShieldCheck className="size-7 text-muted/70" />
             </div>
-
-            <h2 className="mt-2.5 text-xl font-bold text-fg">
-              NoSQL Injection in User Login
-            </h2>
-            <div className="mt-1 flex items-center justify-between text-xs">
-              <span className="font-mono text-muted">POST /api/auth/login</span>
-              <div className="flex items-center gap-4 text-muted font-mono text-[11px]">
-                <span>Finding ID: <strong className="text-fg">F-0012</strong></span>
-                <span>Status: <strong className="text-danger">● Open</strong></span>
-                <span>Discovered: 2 hours ago</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation Tabs: Overview | Evidence | Fix Recommendation | Agent Analysis | References */}
-          <div className="flex items-center gap-4 border-b border-border/60 text-xs font-semibold">
-            <button
-              type="button"
-              onClick={() => setActiveTab('overview')}
-              className={cn(
-                'pb-2 transition-colors border-b-2',
-                activeTab === 'overview'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted hover:text-fg',
-              )}
-            >
-              Overview
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('evidence')}
-              className={cn(
-                'pb-2 transition-colors border-b-2',
-                activeTab === 'evidence'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted hover:text-fg',
-              )}
-            >
-              Evidence
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('fix')}
-              className={cn(
-                'pb-2 transition-colors border-b-2',
-                activeTab === 'fix'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted hover:text-fg',
-              )}
-            >
-              Fix Recommendation
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('agent')}
-              className={cn(
-                'pb-2 transition-colors border-b-2',
-                activeTab === 'agent'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted hover:text-fg',
-              )}
-            >
-              Agent Analysis
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('references')}
-              className={cn(
-                'pb-2 transition-colors border-b-2',
-                activeTab === 'references'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-muted hover:text-fg',
-              )}
-            >
-              References
-            </button>
-          </div>
-
-          {/* Section: Summary */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted">
-              <Shield className="size-3.5 text-primary" />
-              <span>Summary</span>
-            </div>
-            <p className="text-xs text-muted leading-relaxed">
-              The login endpoint is vulnerable to NoSQL injection. User input is directly
-              concatenated into a MongoDB query, allowing an attacker to bypass authentication and
-              gain unauthorized access.
+            <h3 className="text-base font-bold text-fg">No finding selected</h3>
+            <p className="text-xs text-muted mt-2 max-w-sm leading-relaxed">
+              {filteredFindings.length === 0
+                ? 'Once security verification runs against this repository, findings will appear here with detailed AST traces, proof-of-concept exploits, and remediation advice.'
+                : 'Select any finding from the list on the left to inspect vulnerability details, evidence traces, and remediation steps.'}
             </p>
+          </div>
+        ) : (
+          <div className="lg:col-span-7 rounded-2xl border border-border/80 bg-surface/90 p-5 shadow-xs space-y-5">
+            {/* Header */}
+            <div>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'flex items-center gap-1 rounded-md border px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider',
+                      severityPill(selectedFinding.severity),
+                    )}
+                  >
+                    <ShieldAlert className="size-3.5" />
+                    <span>{selectedFinding.severity}</span>
+                  </span>
+                </div>
 
-            {/* 5 Metric Badges */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
-              <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
-                <span className="text-[10px] text-muted uppercase block">Category</span>
-                <span className="font-semibold text-fg text-xs mt-0.5 block">Injection</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/graph')}
+                    className="flex items-center gap-1 rounded-lg border border-border bg-surface-alt/50 px-2.5 py-1 text-xs text-fg hover:bg-surface-alt"
+                  >
+                    <ExternalLink className="size-3" />
+                    <span>Open in Graph</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="grid size-7 place-items-center rounded-lg border border-border bg-surface-alt/50 text-muted hover:text-fg"
+                  >
+                    <MoreHorizontal className="size-3.5" />
+                  </button>
+                </div>
               </div>
-              <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
-                <span className="text-[10px] text-muted uppercase block">CWE</span>
-                <span className="font-mono text-fg text-xs mt-0.5 block">CWE-943</span>
-              </div>
-              <div className="rounded-xl border border-danger/30 bg-danger/5 p-2.5">
-                <span className="text-[10px] text-muted uppercase block">CVSS (v3.1)</span>
-                <span className="font-bold text-danger text-xs mt-0.5 block">9.8 (Critical)</span>
-              </div>
-              <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
-                <span className="text-[10px] text-muted uppercase block">Affected Component</span>
-                <span className="font-mono text-fg text-xs mt-0.5 block truncate">
-                  auth.controller.js
+
+              <h2 className="mt-2.5 text-xl font-bold text-fg">
+                {selectedFinding.type}
+              </h2>
+              <div className="mt-1 flex items-center justify-between text-xs">
+                <span className="font-mono text-muted">
+                  {selectedFinding.evidence?.request && typeof selectedFinding.evidence.request === 'object' && 'path' in selectedFinding.evidence.request
+                    ? `${(selectedFinding.evidence.request as any).method || ''} ${(selectedFinding.evidence.request as any).path}`
+                    : selectedFinding.affectedNodes?.[0] || 'Repository Source'}
                 </span>
-              </div>
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-2.5">
-                <span className="text-[10px] text-muted uppercase block">Exploit Maturity</span>
-                <span className="font-semibold text-amber-400 text-[11px] mt-0.5 flex items-center gap-1">
-                  <span>Proof of Concept</span>
-                </span>
+                <div className="flex items-center gap-4 text-muted font-mono text-[11px]">
+                  <span>Finding ID: <strong className="text-fg">{selectedFinding.id}</strong></span>
+                  <span className="capitalize">Status: <strong className="text-danger">● {selectedFinding.status}</strong></span>
+                  <span>Discovered: {selectedFinding.createdAt ? new Date(selectedFinding.createdAt).toLocaleDateString() : 'Recent'}</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Section: Vulnerable Code */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-muted text-[11px]">
-                <Code2 className="size-3.5 text-primary" />
-                <span>Vulnerable Code</span>
-              </div>
+            {/* Navigation Tabs */}
+            <div className="flex items-center gap-4 border-b border-border/60 text-xs font-semibold">
               <button
                 type="button"
-                onClick={handleCopyCode}
-                className="flex items-center gap-1 text-[11px] text-muted hover:text-fg"
+                onClick={() => setActiveTab('overview')}
+                className={cn(
+                  'pb-2 transition-colors border-b-2',
+                  activeTab === 'overview'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted hover:text-fg',
+                )}
               >
-                <Copy className="size-3" />
-                <span>{copiedCode ? 'Copied' : 'Copy'}</span>
+                Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('evidence')}
+                className={cn(
+                  'pb-2 transition-colors border-b-2',
+                  activeTab === 'evidence'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted hover:text-fg',
+                )}
+              >
+                Evidence
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('fix')}
+                className={cn(
+                  'pb-2 transition-colors border-b-2',
+                  activeTab === 'fix'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted hover:text-fg',
+                )}
+              >
+                Fix Recommendation
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('agent')}
+                className={cn(
+                  'pb-2 transition-colors border-b-2',
+                  activeTab === 'agent'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted hover:text-fg',
+                )}
+              >
+                Agent Analysis
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('references')}
+                className={cn(
+                  'pb-2 transition-colors border-b-2',
+                  activeTab === 'references'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted hover:text-fg',
+                )}
+              >
+                References
               </button>
             </div>
 
-            <div className="rounded-xl border border-border/80 bg-[#090e18] p-3.5 font-mono text-xs overflow-x-auto text-fg">
-              <div className="text-muted text-[11px] mb-2 font-mono">
-                auth.controller.js <span className="text-muted/60">L12–L18</span>
+            {/* Section: Summary */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted">
+                <Shield className="size-3.5 text-primary" />
+                <span>Summary</span>
               </div>
-              <div className="space-y-1 text-[12px] leading-relaxed">
-                <div>
-                  <span className="text-muted/50 select-none mr-4">12</span>
-                  <span className="text-purple-400">const</span> user = <span className="text-purple-400">await</span>{' '}
-                  <span className="text-blue-400">User.findOne</span>(&#123;
+              <p className="text-xs text-muted leading-relaxed">
+                {selectedFinding.attackPath?.narrative ||
+                  `Security vulnerability detected by sentinel-x agent analysis. Affected component: ${selectedFinding.affectedNodes?.join(', ') || 'N/A'}.`}
+              </p>
+
+              {/* 5 Metric Badges */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                  <span className="text-[10px] text-muted uppercase block">Category</span>
+                  <span className="font-semibold text-fg text-xs mt-0.5 block truncate">
+                    {selectedFinding.references?.owasp || selectedFinding.type}
+                  </span>
                 </div>
-                <div>
-                  <span className="text-muted/50 select-none mr-4">13</span>
-                  &nbsp;&nbsp;username: req.body.username,
+                <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                  <span className="text-[10px] text-muted uppercase block">CWE</span>
+                  <span className="font-mono text-fg text-xs mt-0.5 block">
+                    {selectedFinding.references?.cwe?.length ? `CWE-${selectedFinding.references.cwe.join(',')}` : 'CWE-Unknown'}
+                  </span>
                 </div>
-                <div>
-                  <span className="text-muted/50 select-none mr-4">14</span>
-                  &nbsp;&nbsp;password: req.body.password
+                <div className="rounded-xl border border-danger/30 bg-danger/5 p-2.5">
+                  <span className="text-[10px] text-muted uppercase block">CVSS (v3.1)</span>
+                  <span className="font-bold text-danger text-xs mt-0.5 block capitalize">
+                    {selectedFinding.severity === 'critical' ? '9.8 (Critical)' : selectedFinding.severity === 'high' ? '8.0 (High)' : selectedFinding.severity === 'medium' ? '5.5 (Medium)' : '3.0 (Low)'}
+                  </span>
                 </div>
-                <div>
-                  <span className="text-muted/50 select-none mr-4">15</span>
-                  &#125;);
+                <div className="rounded-xl border border-border/80 bg-surface-alt/40 p-2.5">
+                  <span className="text-[10px] text-muted uppercase block">Affected Component</span>
+                  <span className="font-mono text-fg text-xs mt-0.5 block truncate">
+                    {selectedFinding.affectedNodes?.[0] || 'Codebase'}
+                  </span>
                 </div>
-                <div>
-                  <span className="text-muted/50 select-none mr-4">16</span>
-                </div>
-                <div>
-                  <span className="text-muted/50 select-none mr-4">17</span>
-                  <span className="text-purple-400">if</span> (user) &#123;
-                </div>
-                <div>
-                  <span className="text-muted/50 select-none mr-4">18</span>
-                  &nbsp;&nbsp;<span className="text-muted">// proceed with login</span>
-                </div>
-                <div>
-                  <span className="text-muted/50 select-none mr-4">19</span>
-                  &#125;
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-2.5">
+                  <span className="text-[10px] text-muted uppercase block">Exploit Status</span>
+                  <span className="font-semibold text-amber-400 text-[11px] mt-0.5 flex items-center gap-1">
+                    <span>{selectedFinding.verificationResult?.result || 'Pending Verification'}</span>
+                  </span>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Section: Example Payload */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold uppercase tracking-wider text-muted text-[11px]">
-                Example Payload
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-center gap-3">
-              <div className="flex-1 w-full flex items-center justify-between rounded-xl border border-border/80 bg-[#090e18] px-3.5 py-2.5 font-mono text-xs text-rose-300">
-                <span>&#123;&quot;username&quot;: &#123;&quot;$ne&quot;: null&#125;, &quot;password&quot;: &#123;&quot;$ne&quot;: null&#125;&#125;</span>
+            {/* Section: Vulnerable Code */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-muted text-[11px]">
+                  <Code2 className="size-3.5 text-primary" />
+                  <span>Vulnerable Code Trace</span>
+                </div>
                 <button
                   type="button"
-                  onClick={handleCopyPayload}
-                  className="text-muted hover:text-fg ml-2"
-                  title="Copy payload"
+                  onClick={handleCopyCode}
+                  className="flex items-center gap-1 text-[11px] text-muted hover:text-fg"
                 >
-                  <Copy className="size-3.5" />
+                  <Copy className="size-3" />
+                  <span>{copiedCode ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={handleTestSandbox}
-                disabled={testingSandbox}
-                className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-primary/90 disabled:opacity-50 shrink-0 cursor-pointer"
-              >
-                <FlaskConical className="size-4" />
-                <span>{testingSandbox ? 'Verifying in Sandbox...' : 'Test in Sandbox'}</span>
-              </button>
-            </div>
-
-            {sandboxSuccess && (
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-400 flex items-center gap-2">
-                <Check className="size-4" />
-                <span>Successfully authenticated as admin! Vulnerability confirmed in sandbox.</span>
+              <div className="rounded-xl border border-border/80 bg-[#090e18] p-3.5 font-mono text-xs overflow-x-auto text-fg">
+                <div className="text-muted text-[11px] mb-2 font-mono">
+                  {selectedFinding.affectedNodes?.[0] || 'Trace location'}
+                </div>
+                <div className="space-y-1 text-[12px] leading-relaxed">
+                  <div>
+                    <span className="text-muted/50 select-none mr-4">1</span>
+                    <span className="text-purple-400">// Vulnerable node:</span> {selectedFinding.affectedNodes?.join(', ') || 'Trace unavailable'}
+                  </div>
+                  <div>
+                    <span className="text-muted/50 select-none mr-4">2</span>
+                    <span className="text-muted">{selectedFinding.attackPath?.narrative || '// Evidence observed during verification'}</span>
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
-
-          {/* Bottom 2 Columns: Impact & Recommended Fix (images/findings.png) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border/60 text-xs">
-            {/* Impact */}
-            <div className="space-y-2">
-              <h4 className="font-bold text-fg text-xs uppercase tracking-wider text-muted">
-                Impact
-              </h4>
-              <ul className="space-y-1.5 text-fg/90">
-                <li className="flex items-center gap-2">
-                  <span className="size-1.5 rounded-full bg-danger shrink-0" />
-                  <span>Bypass authentication</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="size-1.5 rounded-full bg-danger shrink-0" />
-                  <span>Access any user account</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="size-1.5 rounded-full bg-danger shrink-0" />
-                  <span>Potential data exfiltration</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className="size-1.5 rounded-full bg-danger shrink-0" />
-                  <span>Complete application compromise</span>
-                </li>
-              </ul>
             </div>
 
-            {/* Recommended Fix */}
+            {/* Section: Example Payload */}
             <div className="space-y-2">
-              <h4 className="font-bold text-fg text-xs uppercase tracking-wider text-muted">
-                Recommended Fix
-              </h4>
-              <ul className="space-y-1.5 text-fg/90">
-                <li className="flex items-center gap-2">
-                  <Check className="size-3.5 text-emerald-400 shrink-0" />
-                  <span>Use parameterized queries or Mongoose validation</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="size-3.5 text-emerald-400 shrink-0" />
-                  <span>Validate and sanitize all user input</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="size-3.5 text-emerald-400 shrink-0" />
-                  <span>Implement rate limiting on login attempts</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <Check className="size-3.5 text-emerald-400 shrink-0" />
-                  <span>Add proper error handling and generic error messages</span>
-                </li>
-              </ul>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold uppercase tracking-wider text-muted text-[11px]">
+                  Verification Evidence / Payload
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <div className="flex-1 w-full flex items-center justify-between rounded-xl border border-border/80 bg-[#090e18] px-3.5 py-2.5 font-mono text-xs text-rose-300">
+                  <span className="truncate">
+                    {selectedFinding.evidence?.request ? JSON.stringify(selectedFinding.evidence.request) : '{"test": "payload"}'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyPayload}
+                    className="text-muted hover:text-fg ml-2"
+                    title="Copy payload"
+                  >
+                    <Copy className="size-3.5" />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleTestSandbox}
+                  disabled={testingSandbox}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-primary/90 disabled:opacity-50 shrink-0 cursor-pointer"
+                >
+                  <FlaskConical className="size-4" />
+                  <span>{testingSandbox ? 'Verifying in Sandbox...' : 'Test in Sandbox'}</span>
+                </button>
+              </div>
+
+              {sandboxSuccess && (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-400 flex items-center gap-2">
+                  <Check className="size-4" />
+                  <span>Verification request completed. Result logged in Sandbox telemetry.</span>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom 2 Columns: Impact & Recommended Fix */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border/60 text-xs">
+              <div className="space-y-2">
+                <h4 className="font-bold text-fg text-xs uppercase tracking-wider text-muted">
+                  Impact
+                </h4>
+                <ul className="space-y-1.5 text-fg/90">
+                  <li className="flex items-center gap-2">
+                    <span className="size-1.5 rounded-full bg-danger shrink-0" />
+                    <span>Severity classification: {selectedFinding.severity}</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="size-1.5 rounded-full bg-danger shrink-0" />
+                    <span>Confidence: {selectedFinding.confidence}</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="size-1.5 rounded-full bg-danger shrink-0" />
+                    <span>Affects runtime flow in {selectedFinding.affectedNodes?.length || 1} components</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-bold text-fg text-xs uppercase tracking-wider text-muted">
+                  Recommended Fix
+                </h4>
+                <ul className="space-y-1.5 text-fg/90">
+                  <li className="flex items-center gap-2">
+                    <Check className="size-3.5 text-emerald-400 shrink-0" />
+                    <span>Validate and sanitize untrusted parameters</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="size-3.5 text-emerald-400 shrink-0" />
+                    <span>Enforce strict authentication & authorization middleware</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="size-3.5 text-emerald-400 shrink-0" />
+                    <span>Re-verify in sandbox to confirm fix</span>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

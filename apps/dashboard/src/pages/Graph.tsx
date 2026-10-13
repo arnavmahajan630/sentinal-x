@@ -60,6 +60,17 @@ export function Graph() {
     enabled: Boolean(activeProject),
   });
 
+  const findingsList = useMemo<Finding[]>(() => {
+    if (Array.isArray(findingsData)) return findingsData;
+    return [];
+  }, [findingsData]);
+
+  const totalNodes = graphData?.nodes?.length ?? 0;
+  const totalEdges = graphData?.edges?.length ?? 0;
+  const entryPoints = graphData?.nodes?.filter((n) => n.type?.toLowerCase() === 'route').length ?? 0;
+  const highRiskPaths = findingsList.filter((f) => f.severity === 'critical' || f.severity === 'high').length;
+  const criticalFindings = findingsList.filter((f) => f.severity === 'critical').length;
+
   return (
     <div className="space-y-6">
       {/* ─────────────────────────────────────────────────────────────────── */}
@@ -76,57 +87,57 @@ export function Graph() {
       {/* 2. FIVE METRIC CARDS (images/secgrapg.png)                          */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {/* Card 1: 127 Total Nodes */}
+        {/* Card 1: Total Nodes */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 shrink-0">
             <Network className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">127</div>
+            <div className="text-2xl font-extrabold text-fg">{totalNodes}</div>
             <div className="text-xs text-muted font-medium">Total Nodes</div>
           </div>
         </div>
 
-        {/* Card 2: 214 Relationships */}
+        {/* Card 2: Relationships */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
             <Layers className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">214</div>
+            <div className="text-2xl font-extrabold text-fg">{totalEdges}</div>
             <div className="text-xs text-muted font-medium">Relationships</div>
           </div>
         </div>
 
-        {/* Card 3: 32 External Entry Points */}
+        {/* Card 3: External Entry Points */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">
             <Globe className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">32</div>
+            <div className="text-2xl font-extrabold text-fg">{entryPoints}</div>
             <div className="text-xs text-muted font-medium">External Entry Points</div>
           </div>
         </div>
 
-        {/* Card 4: 18 High Risk Paths */}
+        {/* Card 4: High Risk Paths */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-danger/10 text-danger border border-danger/20 shrink-0">
             <AlertTriangle className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">18</div>
+            <div className="text-2xl font-extrabold text-fg">{highRiskPaths}</div>
             <div className="text-xs text-muted font-medium">High Risk Paths</div>
           </div>
         </div>
 
-        {/* Card 5: 7 Critical Findings */}
+        {/* Card 5: Critical Findings */}
         <div className="flex items-center gap-4 rounded-2xl border border-border/80 bg-surface/90 p-4 shadow-xs">
           <div className="grid size-12 place-items-center rounded-xl bg-danger/10 text-danger border border-danger/20 shrink-0">
             <ShieldAlert className="size-6" />
           </div>
           <div>
-            <div className="text-2xl font-extrabold text-fg">7</div>
+            <div className="text-2xl font-extrabold text-fg">{criticalFindings}</div>
             <div className="text-xs text-muted font-medium">Critical Findings</div>
           </div>
         </div>
