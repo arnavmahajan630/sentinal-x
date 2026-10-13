@@ -10,12 +10,19 @@ import {
   Sun,
   Loader2,
   Layers,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
 import { useTheme } from '@/context/ThemeContext';
 import { cn } from '@/lib/utils';
 
-export function TopBar({ onOpenProjectModal }: { onOpenProjectModal?: () => void }) {
+interface TopBarProps {
+  isSidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
+  onOpenProjectModal?: () => void;
+}
+
+export function TopBar({ isSidebarCollapsed = false, onToggleSidebar, onOpenProjectModal }: TopBarProps) {
   const { activeProject, allProjects, selectProject, clearProject, runAnalysis, isAnalyzing } = useProject();
   const { theme, toggleTheme } = useTheme();
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
@@ -25,8 +32,20 @@ export function TopBar({ onOpenProjectModal }: { onOpenProjectModal?: () => void
       <button type="button" disabled className="sr-only" aria-hidden="false">
         Load project
       </button>
-      {/* Left: Project Selector & Git Info */}
+      {/* Left: Un-collapse Toggle, Project Selector & Git Info */}
       <div className="flex items-center gap-3">
+        {/* Un-collapse toggle button when sidebar is collapsed */}
+        {isSidebarCollapsed && onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="grid size-8 place-items-center rounded-lg border border-border/80 bg-surface-alt/60 text-muted transition-colors hover:bg-surface-alt hover:text-fg cursor-pointer shrink-0"
+            title="Expand sidebar (⌘B)"
+          >
+            <PanelLeftOpen className="size-4 text-fg/80" />
+          </button>
+        )}
+
         {/* Back to Landing Page CTA */}
         <NavLink
           to="/"

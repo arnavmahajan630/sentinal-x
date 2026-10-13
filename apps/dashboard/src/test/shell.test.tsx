@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '@/App';
@@ -151,5 +151,35 @@ describe('attack surface page resilience', () => {
       expect(screen.getByRole('heading', { level: 1, name: /Attack Surface/i })).toBeInTheDocument();
       expect(screen.getAllByText('/api/test').length).toBeGreaterThan(0);
     });
+  });
+});
+
+describe('sidebar drawer UX', () => {
+  it('toggles collapse and expand smoothly without redundant cards', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ status: 200, json: async () => healthy })),
+    );
+
+    renderAt('/overview');
+
+    // 1. Verify redundant "Active Project" and "Arnav" are NOT rendered
+    expect(screen.queryByText(/^Active Project$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Arnav/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Local Instance/i)).not.toBeInTheDocument();
+
+    // 2. Collapse button is present in sidebar
+    const collapseBtn = screen.getByTitle(/Collapse sidebar/i);
+    expect(collapseBtn).toBeInTheDocument();
+
+    // 3. Click collapse button -> Drawer collapses and expand button appears in TopBar
+    fireEvent.click(collapseBtn);
+
+    const expandBtn = await screen.findByTitle(/Expand sidebar/i);
+    expect(expandBtn).toBeInTheDocument();
+
+    // 4. Click expand button -> Drawer expands again
+    fireEvent.click(expandBtn);
+    expect(screen.getByTitle(/Collapse sidebar/i)).toBeInTheDocument();
   });
 });

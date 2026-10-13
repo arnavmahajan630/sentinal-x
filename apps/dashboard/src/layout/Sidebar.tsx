@@ -1,4 +1,4 @@
-import { Layers, Settings as SettingsIcon } from 'lucide-react';
+import { Layers, PanelLeftClose } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { NAV } from '@/nav';
@@ -7,8 +7,14 @@ import { useProject } from '@/context/ProjectContext';
 import { fetchFindings } from '@/lib/api';
 import { HealthPills } from './HealthPills';
 
-export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => void }) {
-  const { activeProject, clearProject } = useProject();
+interface SidebarProps {
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  onOpenProjectModal?: () => void;
+}
+
+export function Sidebar({ isCollapsed = false, onToggleCollapse }: SidebarProps) {
+  const { activeProject } = useProject();
 
   // Query findings to display count badge on Findings nav item
   const { data: findings } = useQuery({
@@ -21,37 +27,42 @@ export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => voi
   const openFindingsCount = findings?.length ?? 0;
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r bg-surface/80 py-5">
-      {/* Brand Header */}
-      <NavLink
-        to="/"
-        className="flex items-center gap-3 px-4 pb-4 transition-opacity hover:opacity-85 cursor-pointer"
-        title="Return to Repositories Landing Page"
-      >
-        <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-primary via-indigo-600 to-secondary text-white shadow-md shadow-primary/20">
-          <Layers className="size-5" />
-        </span>
-        <div className="leading-tight">
-          <div className="text-[16px] font-bold tracking-tight text-fg">Sentinel-X</div>
-          <div className="whitespace-nowrap text-[10.5px] font-medium text-muted">
-            Application Security Platform
-          </div>
-        </div>
-      </NavLink>
-
-      {/* Quick link back to all projects landing */}
-      <div className="px-3 pb-3">
+    <aside
+      className={cn(
+        'flex h-full flex-col bg-surface/80 transition-all duration-300 ease-in-out shrink-0 overflow-hidden',
+        isCollapsed
+          ? 'w-0 border-r-0 opacity-0 pointer-events-none'
+          : 'w-64 border-r border-border/80 opacity-100 py-5',
+      )}
+    >
+      {/* Brand Header & Compact Collapse Toggle */}
+      <div className="flex items-center justify-between px-4 pb-4">
         <NavLink
           to="/"
-          className="flex items-center justify-between rounded-lg border border-border/70 bg-surface-alt/40 px-3 py-1.5 text-[12.5px] font-medium text-muted hover:text-fg hover:bg-surface-alt transition-colors"
+          className="flex items-center gap-3 transition-opacity hover:opacity-85 cursor-pointer min-w-0"
           title="Return to Repositories Landing Page"
         >
-          <div className="flex items-center gap-2">
-            <Layers className="size-3.5 text-primary" />
-            <span>All Projects</span>
+          <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-primary via-indigo-600 to-secondary text-white shadow-md shadow-primary/20 shrink-0">
+            <Layers className="size-5" />
+          </span>
+          <div className="leading-tight truncate">
+            <div className="text-[16px] font-bold tracking-tight text-fg truncate">Sentinel-X</div>
+            <div className="whitespace-nowrap text-[10.5px] font-medium text-muted truncate">
+              Security Platform
+            </div>
           </div>
-          <span className="text-[10.5px] text-muted">Landing ↗</span>
         </NavLink>
+
+        {onToggleCollapse && (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="grid size-7 place-items-center rounded-lg text-muted hover:bg-surface-alt hover:text-fg transition-colors cursor-pointer shrink-0"
+            title="Collapse sidebar (⌘B)"
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
+        )}
       </div>
 
       {/* Primary Navigation */}
@@ -83,58 +94,9 @@ export function Sidebar({ onOpenProjectModal }: { onOpenProjectModal?: () => voi
         ))}
       </nav>
 
-      {/* Active Project Card */}
-      <div className="mx-3 mt-3 rounded-xl border bg-surface-alt/40 p-2.5">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
-            Active Project
-          </span>
-          <NavLink
-            to="/"
-            className="text-[10.5px] font-medium text-primary hover:underline cursor-pointer"
-            title="Return to Repositories Landing Page to switch project"
-          >
-            Switch
-          </NavLink>
-        </div>
-        <div className="mt-1 flex items-center gap-2">
-          <div className="grid size-7 place-items-center rounded-lg bg-primary/10 text-primary font-semibold text-[11px]">
-            {activeProject ? activeProject.name.slice(0, 2).toUpperCase() : '--'}
-          </div>
-          <div className="min-w-0 flex-1 leading-tight">
-            <div className="truncate text-[12.5px] font-medium text-fg">
-              {activeProject ? activeProject.name : 'No project loaded'}
-            </div>
-            <div className="truncate text-[11px] text-muted">
-              {activeProject ? `${activeProject.gitBranch || 'main'} · ${activeProject.gitHead ? activeProject.gitHead.slice(0, 7) : 'head'}` : 'Click Switch to load'}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* System Health Status Pills */}
-      <div className="mt-3 border-t border-border/80 pt-3">
+      <div className="mt-auto border-t border-border/80 pt-3">
         <HealthPills />
-      </div>
-
-      {/* User / Instance Footer */}
-      <div className="mt-3 flex items-center justify-between border-t border-border/80 px-4 pt-3 text-fg/80">
-        <div className="flex items-center gap-2.5">
-          <span className="grid size-7 place-items-center rounded-full bg-surface-alt text-[12px] font-semibold text-fg">
-            A
-          </span>
-          <div className="leading-tight">
-            <div className="text-[12.5px] font-medium text-fg">Arnav</div>
-            <div className="text-[10.5px] text-muted">Local Instance</div>
-          </div>
-        </div>
-        <NavLink
-          to="/settings"
-          className="text-muted transition-colors hover:text-fg"
-          title="Settings"
-        >
-          <SettingsIcon className="size-4" />
-        </NavLink>
       </div>
     </aside>
   );
