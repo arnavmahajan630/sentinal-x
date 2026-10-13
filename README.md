@@ -12,7 +12,7 @@ docker compose up --build
 
 - Dashboard: http://localhost:8080
 - API: http://localhost:4000 (`/health`, `/api/config`)
-- MongoDB: `127.0.0.1:27017`
+- MongoDB: `127.0.0.1:27018` (set `MONGO_PORT` in `.env` to use a different host port)
 
 ## Local dev
 
@@ -27,7 +27,7 @@ npm run dev                       # server :4000 (tsx watch) + dashboard :5173 (
 
 | Command                                                                                             | What                                                                                   |
 | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `npm run typecheck` / `lint` / `test`                                                               | quality gates (DB test needs Mongo on `localhost:27017`)                               |
+| `npm run typecheck` / `lint` / `test`                                                               | quality gates (DB tests default to `localhost:27017`; set `MONGO_TEST_URL` to use the Compose Mongo on port `27018`) |
 | `npm run llm:ping`                                                                                  | scratch LLM call through `getProvider(cfg)` (reads `.env`)                             |
 | `npm run index -- <path> [--dump routes\|ops\|models\|authz\|json] [--force]`                       | index a repo into Mongo (needs `docker compose up -d mongo`), print summary            |
 | `npm run graph -- <path> [--dump summary\|routes\|route <id>\|find <Type>\|path <from> <to>\|json]` | index + build the security graph, print a summary                                      |
