@@ -1,0 +1,4 @@
+{
+  "buildCommand": "npm run build --workspace=@sentinelx/dashboard",
+  "outputDirectory": "apps/dashboard/dist"
+}
